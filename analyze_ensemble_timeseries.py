@@ -14,13 +14,35 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 # Configuration
-BASE_PATH = "/datalake/NS9560K/rosief"
-PARAM_PATH = "//nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_1850_soilc_scripts/PPE_param_files/lhs_params/"
-OUTPUT_PATH = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/"
-ENSEMBLE_MEMBERS = range(1, 17)  # n01 to n13
-YEARS = range(29, 30)  # Years 09 to 10
-VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC']
+ens_n = 2
 
+BASE_PATH = "/datalake/NS9560K/rosief"
+OUTPUT_ROOT = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/"
+
+if(ens_n==1):
+    PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_1850_soilc_scripts/PPE_param_files/lhs_params"
+    paramfilename='params_lhs_20251211_1740_0'
+    ensdir='ens_v1_soilc'
+    PARAMETERS = ['fates_allom_l2fr', 'fates_maintresp_leaf_ryan1991_baserate', 
+              'fates_allom_d2bl1', 'fates_leaf_slatop']
+    ENSEMBLE_MEMBERS = range(1, 17)  # n01 to n13
+    output_dirname='ppe_2000_v1_soilc'
+    YEARS = range(29, 30)  # Years 09 to 10
+    casename = 'noresm_beta07_crujra_ppe_v1_'
+    YEARS = range(29, 30)  # Years 09 to 10
+
+elif(ens_n==2):
+    PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_c4g_scripts/PPE_param_files/lhs_params"
+    paramfilename='params_lhs_20251221_0039_'
+    ensdir='ens_v1_c4g'
+    PARAMETERS = ['fates_leaf_vcmax25top','fates_leaf_slatop','fates_turnover_leaf_canopy','fates_landuse_grazing_rate','fates_fire_cg_strikes',]
+    ENSEMBLE_MEMBERS = range(1, 21)  # n01 to n13
+    output_dirname='ppe_2000_v1_c4g'
+    YEARS = range(39, 40)  # Years 09 to 10
+    casename = 'noresm_beta07_crujra_ppe_2000_v2_'
+
+outputdir = OUTPUT_ROOT+output_dirname             
+VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC']
 
 # Define regions for analysis
 # Note: For global regions, use 0-360 longitude range
@@ -48,8 +70,7 @@ results_ppe_2000_v1 = {region: {var: {} for var in VARIABLES} for region in REGI
 results_ppe_v1_summer_lai = {region: {} for region in REGIONS.keys()}
 results_ppe_2000_v1_summer_lai = {region: {} for region in REGIONS.keys()}
 # Store parameter values: {parameter_name: {ensemble_member: array_of_pft_values}}
-PARAMETERS = ['fates_allom_l2fr', 'fates_maintresp_leaf_ryan1991_baserate', 
-              'fates_allom_d2bl1', 'fates_leaf_slatop']
+
 param_values = {param: {} for param in PARAMETERS}
 
 # Map regions to their PFT indices (0-based indexing)
@@ -63,6 +84,34 @@ REGION_PFT_MAP = {
     'C4': 13,    # PFT 14 (index 13) - C4 Grass
 }
 
+def is_valid_param_value(param_val):
+    """Check if a parameter value is valid (not NaN)."""
+    if isinstance(param_val, np.ndarray):
+        return not np.all(np.isnan(param_val))
+    else:
+        return not np.isnan(param_val)
+
+def get_param_value_for_region(param_name, ensemble_num, region_name):
+    """Get parameter value for a specific region and ensemble member."""
+    if param_name not in param_values or ensemble_num not in param_values[param_name]:
+        return np.nan
+    
+    param_val = param_values[param_name][ensemble_num]
+    
+    # Handle special non-PFT parameters
+    if param_name in ['fates_fire_cg_strikes', 'fates_landuse_grazing_rate']:
+        return param_val
+    
+    # Handle PFT-specific parameters
+    pft_idx = REGION_PFT_MAP.get(region_name, None)
+    if isinstance(param_val, np.ndarray):
+        if pft_idx is not None:
+            return param_val[pft_idx]
+        else:
+            return param_val[0]  # Use first PFT for global regions
+    else:
+        return param_val
+
 print("Starting ensemble analysis...")
 print(f"Processing {len(list(ENSEMBLE_MEMBERS))} ensemble members")
 print(f"Years: {min(YEARS)}-{max(YEARS)}")
@@ -71,7 +120,7 @@ print(f"Variables: {', '.join(VARIABLES)}\n")
 # First, read parameter values
 print("Reading parameter files...")
 for n in ENSEMBLE_MEMBERS:
-    param_file = f"{PARAM_PATH}/params_lhs_20251211_1740_{n:03d}.nc"
+    param_file = f"{PARAM_PATH}/{paramfilename}{n:03d}.nc"
     try:
         ds_param = xr.open_dataset(param_file)
         print(f'\nEnsemble {n:02d} - param_file: {param_file}')
@@ -84,29 +133,120 @@ for n in ENSEMBLE_MEMBERS:
                 # Flatten if multi-dimensional
                 if param_array.ndim > 1:
                     param_array = param_array.flatten()
-                param_values[param][n] = param_array
-                print(f"  {param}: {len(param_array)} PFT values, range [{param_array.min():.6f}, {param_array.max():.6f}]")
+                
+                # Handle special cases
+                if param == 'fates_fire_cg_strikes':
+                    # Single value parameter - store as scalar
+                    if param_array.ndim == 0:
+                        param_values[param][n] = float(param_array)
+                    else:
+                        param_values[param][n] = float(param_array[0]) if len(param_array) > 0 else np.nan
+                    print(f"  {param}: single value = {param_values[param][n]:.6f}")
+                elif param == 'fates_landuse_grazing_rate':
+                    # 5-value parameter - use the 3rd value (index 2)
+                    if param_array.ndim == 0:
+                        # Scalar value, just use it
+                        param_values[param][n] = float(param_array)
+                    else:
+                        param_values[param][n] = float(param_array[2]) if len(param_array) > 2 else np.nan
+                    if param_array.ndim == 0:
+                        print(f"  {param}: using value = {param_values[param][n]:.6f}")
+                    else:
+                        print(f"  {param}: using 3rd value = {param_values[param][n]:.6f} (from {len(param_array)} values)")
+                else:
+                    # PFT-indexed parameters
+                    param_values[param][n] = param_array
+                    if param_array.ndim == 0:
+                        print(f"  {param}: single value = {float(param_array):.6f}")
+                    else:
+                        print(f"  {param}: {len(param_array)} PFT values, range [{param_array.min():.6f}, {param_array.max():.6f}]")
             else:
                 print(f"  WARNING: {param} not found in file")
-                param_values[param][n] = np.full(14, np.nan)  # Assume 14 PFTs
+                if param in ['fates_fire_cg_strikes', 'fates_landuse_grazing_rate']:
+                    param_values[param][n] = np.nan  # Single value
+                else:
+                    param_values[param][n] = np.full(14, np.nan)  # Assume 14 PFTs
         
         ds_param.close()
     except Exception as e:
         print(f"  ERROR reading {param_file}: {str(e)}")
         for param in PARAMETERS:
-            param_values[param][n] = np.full(14, np.nan)  # Store NaN array for all PFTs
+            if param in ['fates_fire_cg_strikes', 'fates_landuse_grazing_rate']:
+                param_values[param][n] = np.nan  # Single value
+            else:
+                param_values[param][n] = np.full(14, np.nan)  # Store NaN array for all PFTs
 
 print("\n" + "="*60)
-print("Identifying PFT grid cells from FATES_NOCOMP_PATCHAREA_PF...\n")
+print("Loading PFT grid cells from pre-generated files...\n")
 
-# Read one ensemble member to identify top grid cells for various PFTs
-# Using first ensemble member and first year
-n = 1
-ensemble_id = f"n{n:02d}"
-dir_path = f"{BASE_PATH}/noresm_beta07_crujra_ppe_v1_{ensemble_id}/lnd/hist/"
-year = min(YEARS)
-pattern = f"{dir_path}noresm_beta07_crujra_ppe_v1_{ensemble_id}.clm2.h0a.00{year:02d}-*.nc"
-files = sorted(glob(pattern))
+# Path to PFT grid cell files (generated by extract_pft_dominated_pixels.py)
+PFT_GRID_CELLS_PATH = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/"
+
+# PFT configuration: short_name -> full_name
+PFT_NAMES = {
+    'bdt': 'BDTs',
+    'bet': 'BETs', 
+    'ent': 'ENTs',
+    'ac3g': 'AC3G',
+    'c3g': 'C3G',
+    'c4': 'C4'
+}
+
+# Initialize grid cell variables
+BDT_GRID_CELLS = None
+BET_GRID_CELLS = None
+ENT_GRID_CELLS = None
+AC3G_GRID_CELLS = None
+C3G_GRID_CELLS = None
+C4_GRID_CELLS = None
+
+# Load each PFT's grid cells from file
+for pft_short, pft_region in PFT_NAMES.items():
+    pft_file = Path(PFT_GRID_CELLS_PATH) / f"{pft_short}_grid_cells.txt"
+    
+    if pft_file.exists():
+        try:
+            # Load lat/lon data
+            data = np.loadtxt(pft_file, skiprows=1)
+            
+            if data.ndim == 2 and len(data) > 0:
+                grid_cells = {
+                    'lats': data[:, 0],
+                    'lons': data[:, 1],
+                    'values': None  # We don't store the coverage values from file
+                }
+                
+                # Assign to appropriate variable
+                if pft_short == 'bdt':
+                    BDT_GRID_CELLS = grid_cells
+                elif pft_short == 'bet':
+                    BET_GRID_CELLS = grid_cells
+                elif pft_short == 'ent':
+                    ENT_GRID_CELLS = grid_cells
+                elif pft_short == 'ac3g':
+                    AC3G_GRID_CELLS = grid_cells
+                elif pft_short == 'c3g':
+                    C3G_GRID_CELLS = grid_cells
+                elif pft_short == 'c4':
+                    C4_GRID_CELLS = grid_cells
+                
+                # Add to REGIONS
+                REGIONS[pft_region] = {'grid_cells': grid_cells}
+                
+                print(f"  Loaded {pft_region} grid cells from {pft_file}")
+                print(f"    {len(grid_cells['lats'])} grid cells")
+                print(f"    Lat range: {grid_cells['lats'].min():.2f} to {grid_cells['lats'].max():.2f}")
+                print(f"    Lon range: {grid_cells['lons'].min():.2f} to {grid_cells['lons'].max():.2f}")
+            else:
+                print(f"  WARNING: Invalid data format in {pft_file}")
+        except Exception as e:
+            print(f"  ERROR reading {pft_file}: {str(e)}")
+    else:
+        print(f"  WARNING: {pft_file} not found")
+        print(f"           Run extract_pft_dominated_pixels.py first to generate PFT grid cell files")
+
+# Check if any files were found
+files = []
 
 if files:
     print(f"Reading FATES_NOCOMP_PATCHAREA_PF from {len(files)} files...")
@@ -584,15 +724,17 @@ print("Processing model outputs for PPE_V1...\n")
 # Loop through each ensemble member for first ensemble
 for n in ENSEMBLE_MEMBERS:
     ensemble_id = f"n{n:02d}"
-    dir_path = f"{BASE_PATH}/noresm_beta07_crujra_ppe_v1_{ensemble_id}/lnd/hist/"
+    dir_path = f"{BASE_PATH}/{casename}{ensemble_id}/lnd/hist/"
     
     print(f"Processing ensemble member {ensemble_id}...")
+    print(f"  Looking in: {dir_path}")
     
     # Build file pattern for years 05-10, all months
     file_patterns = []
     for year in YEARS:
-        pattern = f"{dir_path}noresm_beta07_crujra_ppe_v1_{ensemble_id}.clm2.h0a.00{year:02d}-*.nc"
+        pattern = f"{dir_path}{casename}{ensemble_id}.clm2.h0a.00{year:02d}-*.nc"
         file_patterns.append(pattern)
+    print(f"  File pattern: {casename}{ensemble_id}.clm2.h0a.00{min(YEARS):02d}-*.nc")
     
     # Collect all matching files
     all_files = []
@@ -676,109 +818,112 @@ for n in ENSEMBLE_MEMBERS:
                 results_ppe_v1[region_name][var][n] = np.nan
 
 print("\n" + "="*60)
-print("Processing model outputs for PPE_2000_V1...\n")
+if ens_n != 2:
+    print("Processing model outputs for PPE_2000_V1...\n")
+else:
+    print("Skipping PPE_2000_V1 processing (ens_n==2)...\n")
 
 # Loop through each ensemble member for second ensemble
-for n in ENSEMBLE_MEMBERS:
-    ensemble_id = f"n{n:02d}"
-    dir_path = f"{BASE_PATH}/noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}/lnd/hist/"
-    
-    print(f"Processing ensemble member {ensemble_id}...")
-    
-    # Build file pattern for years 05-10, all months
-    file_patterns = []
-    for year in YEARS:
-        pattern = f"{dir_path}noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}.clm2.h0a.00{year:02d}-*.nc"
-        file_patterns.append(pattern)
-    
-    # Collect all matching files
-    all_files = []
-    for pattern in file_patterns:
-        files = sorted(glob(pattern))
-        all_files.extend(files)
-    
-    if not all_files:
-        print(f"  WARNING: No files found for {ensemble_id}")
-        continue
-    
-    print(f"  Found {len(all_files)} files")
-    
-    try:
-        # Open all files as a single dataset
-        ds = xr.open_mfdataset(all_files, combine='by_coords')
+if ens_n != 2:
+    for n in ENSEMBLE_MEMBERS:
+        ensemble_id = f"n{n:02d}"
+        dir_path = f"{BASE_PATH}/noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}/lnd/hist/"
         
-        # Extract and compute mean for each variable and region
-        for var in VARIABLES:
-            if var in ds:
-                print(f"  {var}:")
-                # Compute mean for each region
-                for region_name, region_bounds in REGIONS.items():
-                    if 'grid_cells' in region_bounds:
-                        # For BDTs and BETs, select specific grid cells
-                        grid_cells = region_bounds['grid_cells']
-                        values = []
-                        for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
-                            val = ds[var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                            values.append(float(val))
-                        var_mean = np.mean(values)
-                        results_ppe_2000_v1[region_name][var][n] = float(var_mean)
-                        print(f"    {region_name}: {var_mean:.4f}")
-                        
-                        # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
-                        if var == 'FATES_LAI':
-                            summer_values = []
+        print(f"Processing ensemble member {ensemble_id}...")
+        print(f"  Looking in: {dir_path}")
+        
+        # Build file pattern for years 05-10, all months
+        file_patterns = []
+        for year in YEARS:
+            pattern = f"{dir_path}noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}.clm2.h0a.00{year:02d}-*.nc"
+            file_patterns.append(pattern)
+        print(f"  File pattern: noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}.clm2.h0a.00{min(YEARS):02d}-*.nc")
+        
+        # Collect all matching files
+        all_files = []
+        for pattern in file_patterns:
+            files = sorted(glob(pattern))
+            all_files.extend(files)
+        
+        if not all_files:
+            print(f"  WARNING: No files found for {ensemble_id}")
+            continue
+        
+        print(f"  Found {len(all_files)} files")
+        
+        try:
+            # Open all files as a single dataset
+            ds = xr.open_mfdataset(all_files, combine='by_coords')
+            
+            # Extract and compute mean for each variable and region
+            for var in VARIABLES:
+                if var in ds:
+                    print(f"  {var}:")
+                    # Compute mean for each region
+                    for region_name, region_bounds in REGIONS.items():
+                        if 'grid_cells' in region_bounds:
+                            # For BDTs and BETs, select specific grid cells
+                            grid_cells = region_bounds['grid_cells']
+                            values = []
                             for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
-                                ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
+                                val = ds[var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
+                                values.append(float(val))
+                            var_mean = np.mean(values)
+                            results_ppe_2000_v1[region_name][var][n] = float(var_mean)
+                            print(f"    {region_name}: {var_mean:.4f}")
+                            
+                            # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                            if var == 'FATES_LAI':
+                                summer_values = []
+                                for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                                    ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
+                                    # Select summer months (7, 8, 9)
+                                    ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([7, 8, 9]))
+                                    summer_val = ds_summer.mean(skipna=True).values
+                                    summer_values.append(float(summer_val))
+                                summer_mean = np.mean(summer_values)
+                                results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
+                                print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                        else:
+                            # Subset by lat and lon
+                            ds_subset = ds[var].where(
+                                (ds['lat'] >= region_bounds['lat_min']) &
+                                (ds['lat'] <= region_bounds['lat_max']) &
+                                (ds['lon'] >= region_bounds['lon_min']) &
+                                (ds['lon'] <= region_bounds['lon_max']),
+                                drop=False
+                            )
+                            # Compute temporal and spatial mean (excluding NaN)
+                            var_mean = ds_subset.mean(skipna=True).values
+                            results_ppe_2000_v1[region_name][var][n] = float(var_mean)
+                            print(f"    {region_name}: {var_mean:.4f}")
+                            
+                            # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                            if var == 'FATES_LAI':
                                 # Select summer months (7, 8, 9)
-                                ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([7, 8, 9]))
-                                summer_val = ds_summer.mean(skipna=True).values
-                                summer_values.append(float(summer_val))
-                            summer_mean = np.mean(summer_values)
-                            results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
-                            print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
-                    else:
-                        # Subset by lat and lon
-                        ds_subset = ds[var].where(
-                            (ds['lat'] >= region_bounds['lat_min']) &
-                            (ds['lat'] <= region_bounds['lat_max']) &
-                            (ds['lon'] >= region_bounds['lon_min']) &
-                            (ds['lon'] <= region_bounds['lon_max']),
-                            drop=False
-                        )
-                        # Compute temporal and spatial mean (excluding NaN)
-                        var_mean = ds_subset.mean(skipna=True).values
-                        results_ppe_2000_v1[region_name][var][n] = float(var_mean)
-                        print(f"    {region_name}: {var_mean:.4f}")
-                        
-                        # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                                ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([7, 8, 9]))
+                                summer_mean = ds_summer.mean(skipna=True).values
+                                results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
+                                print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                else:
+                    print(f"  WARNING: Variable {var} not found in dataset")
+                    for region_name in REGIONS.keys():
+                        results_ppe_2000_v1[region_name][var][n] = np.nan
                         if var == 'FATES_LAI':
-                            # Select summer months (7, 8, 9)
-                            ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([7, 8, 9]))
-                            summer_mean = ds_summer.mean(skipna=True).values
-                            results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
-                            print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
-            else:
-                print(f"  WARNING: Variable {var} not found in dataset")
+                            results_ppe_2000_v1_summer_lai[region_name][n] = np.nan
+            
+            ds.close()
+            
+        except Exception as e:
+            print(f"  ERROR processing {ensemble_id}: {str(e)}")
+            for var in VARIABLES:
                 for region_name in REGIONS.keys():
                     results_ppe_2000_v1[region_name][var][n] = np.nan
                     if var == 'FATES_LAI':
                         results_ppe_2000_v1_summer_lai[region_name][n] = np.nan
-        
-        ds.close()
-        
-    except Exception as e:
-        print(f"  ERROR processing {ensemble_id}: {str(e)}")
-        for var in VARIABLES:
-            for region_name in REGIONS.keys():
-                results_ppe_2000_v1[region_name][var][n] = np.nan
-                if var == 'FATES_LAI':
-                    results_ppe_2000_v1_summer_lai[region_name][n] = np.nan
-
-print("\n" + "="*60)
-print("Saving data to CSV files...")
 
 # Create output directory
-output_dir = Path("/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/")
+output_dir = Path(outputdir)
 output_dir.mkdir(exist_ok=True)
 
 # Create CSV subdirectory
@@ -796,9 +941,18 @@ for region_name in REGIONS.keys():
     pft_idx = REGION_PFT_MAP.get(region_name, None)
     print(f"\n  Region: {region_name}, PFT index: {pft_idx}")
     for param in PARAMETERS:
-        if pft_idx is not None:
+        param_list = []
+        
+        # Handle special non-PFT parameters
+        if param in ['fates_fire_cg_strikes', 'fates_landuse_grazing_rate']:
+            # These are not PFT-indexed, just use the value directly
+            for n in ensemble_nums:
+                param_val = param_values[param].get(n, np.nan)
+                param_list.append(param_val)
+            csv_data[param] = param_list
+            print(f"    {param} values (single/scalar): {param_list[:5]}...")  # Show first 5
+        elif pft_idx is not None:
             # Use PFT-specific value for this region
-            param_list = []
             for n in ensemble_nums:
                 param_array = param_values[param].get(n, np.full(14, np.nan))
                 if isinstance(param_array, np.ndarray):
@@ -809,7 +963,6 @@ for region_name in REGIONS.keys():
             print(f"    {param} values for PFT {pft_idx+1}: {param_list[:5]}...")  # Show first 5
         else:
             # For global regions, use first PFT (or could use average)
-            param_list = []
             for n in ensemble_nums:
                 param_array = param_values[param].get(n, np.full(14, np.nan))
                 if isinstance(param_array, np.ndarray):
@@ -824,37 +977,41 @@ for region_name in REGIONS.keys():
         csv_data[f'{var}_PPE_V1'] = [results_ppe_v1[region_name][var].get(n, np.nan) for n in ensemble_nums]
     
     # Add PPE_2000_V1 variables
-    for var in VARIABLES:
-        csv_data[f'{var}_PPE_2000_V1'] = [results_ppe_2000_v1[region_name][var].get(n, np.nan) for n in ensemble_nums]
+    if ens_n != 2:
+        for var in VARIABLES:
+            csv_data[f'{var}_PPE_2000_V1'] = [results_ppe_2000_v1[region_name][var].get(n, np.nan) for n in ensemble_nums]
     
     # Add summer LAI values
     csv_data['fates_lai_summer_PPE_V1'] = [results_ppe_v1_summer_lai[region_name].get(n, np.nan) for n in ensemble_nums]
-    csv_data['fates_lai_summer_PPE_2000_V1'] = [results_ppe_2000_v1_summer_lai[region_name].get(n, np.nan) for n in ensemble_nums]
+    if ens_n != 2:
+        csv_data['fates_lai_summer_PPE_2000_V1'] = [results_ppe_2000_v1_summer_lai[region_name].get(n, np.nan) for n in ensemble_nums]
     
     # Add summer LAI ratio
-    summer_lai_ratios = []
-    for n in ensemble_nums:
-        v1 = results_ppe_v1_summer_lai[region_name].get(n, np.nan)
-        v2 = results_ppe_2000_v1_summer_lai[region_name].get(n, np.nan)
-        if not np.isnan(v1) and not np.isnan(v2) and v1 != 0:
-            summer_lai_ratios.append(v2 / v1)
-        else:
-            summer_lai_ratios.append(np.nan)
-    csv_data['fates_lai_summer_ratio'] = summer_lai_ratios
+    if ens_n != 2:
+        summer_lai_ratios = []
+        for n in ensemble_nums:
+            v1 = results_ppe_v1_summer_lai[region_name].get(n, np.nan)
+            v2 = results_ppe_2000_v1_summer_lai[region_name].get(n, np.nan)
+            if not np.isnan(v1) and not np.isnan(v2) and v1 != 0:
+                summer_lai_ratios.append(v2 / v1)
+            else:
+                summer_lai_ratios.append(np.nan)
+        csv_data['fates_lai_summer_ratio'] = summer_lai_ratios
     
     # Add ratios
-    for var in VARIABLES:
-        ratios = []
-        for n in ensemble_nums:
-            v1 = results_ppe_v1[region_name][var].get(n, np.nan)
-            v2 = results_ppe_2000_v1[region_name][var].get(n, np.nan)
-            print(var, 'v1',v1)
-            print(var, 'v2',v2)
-            if not np.isnan(v1) and not np.isnan(v2) and v1 != 0:
-                ratios.append(v2 / v1)
-            else:
-                ratios.append(np.nan)
-        csv_data[f'{var}_ratio'] = ratios
+    if ens_n != 2:
+        for var in VARIABLES:
+            ratios = []
+            for n in ensemble_nums:
+                v1 = results_ppe_v1[region_name][var].get(n, np.nan)
+                v2 = results_ppe_2000_v1[region_name][var].get(n, np.nan)
+                print(var, 'v1',v1)
+                print(var, 'v2',v2)
+                if not np.isnan(v1) and not np.isnan(v2) and v1 != 0:
+                    ratios.append(v2 / v1)
+                else:
+                    ratios.append(np.nan)
+            csv_data[f'{var}_ratio'] = ratios
     
     # Create and save DataFrame
     df = pd.DataFrame(csv_data)
@@ -867,233 +1024,245 @@ print("\n" + "="*60)
 print("Creating plots...")
 
 # Loop over each region to create separate plots
-for region_name in REGIONS.keys():
-    print(f"\nCreating plots for region: {region_name}")
-    
-    # Create figure with subplots for each variable
-    fig, axes = plt.subplots(3, 1, figsize=(10, 12))
-    fig.suptitle(f'FATES Variables vs Ensemble Members - {region_name.replace("_", " ").title()} (Years 05-10)', 
-                 fontsize=14, fontweight='bold')
+if ens_n != 2:
+  for region_name in REGIONS.keys():
+      print(f"\nCreating plots for region: {region_name}")
+      
+      # Create figure with subplots for each variable
+      fig, axes = plt.subplots(len(VARIABLES), 1, figsize=(10, 16))
+      fig.suptitle(f'FATES Variables vs Ensemble Members - {region_name.replace("_", " ").title()} (Years 05-10)', 
+                   fontsize=14, fontweight='bold')
 
-    for idx, var in enumerate(VARIABLES):
-        ax = axes[idx]
-        
-        # Extract ensemble numbers and values for both ensembles
-        ensemble_nums = sorted(results_ppe_v1[region_name][var].keys())
-        values_v1 = [results_ppe_v1[region_name][var][n] for n in ensemble_nums]
-        values_2000 = [results_ppe_2000_v1[region_name][var].get(n, np.nan) for n in ensemble_nums]
-        
-        # Plot both ensembles
-        ax.plot(ensemble_nums, values_v1, 'o-', linewidth=2, markersize=8, label='PPE_V1')
-        ax.plot(ensemble_nums, values_2000, 's-', linewidth=2, markersize=8, label='PPE_2000_V1')
-        ax.set_xlabel('Ensemble Member', fontsize=11)
-        ax.set_ylabel(var, fontsize=11)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_xticks(ensemble_nums)
+      for idx, var in enumerate(VARIABLES):
+          ax = axes[idx]
+          
+          # Extract ensemble numbers and values for both ensembles
+          ensemble_nums = sorted(results_ppe_v1[region_name][var].keys())
+          values_v1 = [results_ppe_v1[region_name][var][n] for n in ensemble_nums]
+          values_2000 = [results_ppe_2000_v1[region_name][var].get(n, np.nan) for n in ensemble_nums]
+          
+          # Plot both ensembles
+          ax.plot(ensemble_nums, values_v1, 'o-', linewidth=2, markersize=8, label='PPE_V1')
+          ax.plot(ensemble_nums, values_2000, 's-', linewidth=2, markersize=8, label='PPE_2000_V1')
+          ax.set_xlabel('Ensemble Member', fontsize=11)
+          ax.set_ylabel(var, fontsize=11)
+          ax.legend()
+          ax.grid(True, alpha=0.3)
+          ax.set_xticks(ensemble_nums)
 
-    plt.tight_layout()
+      plt.tight_layout()
 
-    # Save figure
-    output_file = output_dir / f"ensemble_analysis_years05-10_{region_name}.png"
-    fig.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"  Figure saved to: {output_file}")
-    plt.close(fig)
+      # Save figure
+      output_file = output_dir / f"ensemble_analysis_years05-10_{region_name}.png"
+      fig.savefig(output_file, dpi=300, bbox_inches='tight')
+      print(f"  Figure saved to: {output_file}")
+      plt.close(fig)
 
 
 
 # Create comprehensive parameter vs FATES variable plots for each region
-print("\n" + "="*60)
-print("Creating parameter vs FATES variable plots...")
+if ens_n != 2:
+    print("\n" + "="*60)
+    print("Creating parameter vs FATES variable plots...")
 
-for region_name in REGIONS.keys():
-    print(f"\nCreating parameter plots for region: {region_name}")
-    
-    # Create a 4x3 grid of subplots (4 parameters x 3 variables)
-    fig3, axes3 = plt.subplots(len(PARAMETERS), len(VARIABLES), figsize=(20, 16))
-    fig3.suptitle(f'FATES Variables vs Parameters - {region_name.replace("_", " ").title()} (Years 05-10)', 
-                  fontsize=16, fontweight='bold', y=0.995)
+    for region_name in REGIONS.keys():
+        print(f"\nCreating parameter plots for region: {region_name}")
+        
+        # Create a 4x3 grid of subplots (4 parameters x 3 variables)
+        fig3, axes3 = plt.subplots(len(PARAMETERS), len(VARIABLES), figsize=(20, 16))
+        fig3.suptitle(f'FATES Variables vs Parameters - {region_name.replace("_", " ").title()} (Years 05-10)', 
+                      fontsize=16, fontweight='bold', y=0.995)
 
-    # Store scatter objects for colorbar
-    scatter_objects = []
+        # Store scatter objects for colorbar
+        scatter_objects = []
 
-    # Iterate through parameters and variables
-    for param_idx, param in enumerate(PARAMETERS):
-        for var_idx, var in enumerate(VARIABLES):
-            ax = axes3[param_idx, var_idx]
-            
-            # Collect data points for PPE_V1
-            ensemble_nums_v1 = []
-            param_vals_v1 = []
-            var_vals_v1 = []
-            slatop_vals_v1 = []
-            
-            for n in sorted(results_ppe_v1[region_name][var].keys()):
-                if (n in param_values[param] and 
-                    not np.isnan(results_ppe_v1[region_name][var][n]) and 
-                    not np.isnan(param_values[param][n]) and
-                    n in param_values['fates_leaf_slatop'] and
-                    not np.isnan(param_values['fates_leaf_slatop'][n])):
-                    ensemble_nums_v1.append(n)
-                    param_vals_v1.append(param_values[param][n])
-                    var_vals_v1.append(results_ppe_v1[region_name][var][n])
-                    slatop_vals_v1.append(param_values['fates_leaf_slatop'][n])
-            
-            # Collect data points for PPE_2000_V1
-            ensemble_nums_2000 = []
-            param_vals_2000 = []
-            var_vals_2000 = []
-            slatop_vals_2000 = []
-            
-            for n in sorted(results_ppe_2000_v1[region_name][var].keys()):
-                if (n in param_values[param] and 
-                    not np.isnan(results_ppe_2000_v1[region_name][var][n]) and 
-                    not np.isnan(param_values[param][n]) and
-                    n in param_values['fates_leaf_slatop'] and
-                    not np.isnan(param_values['fates_leaf_slatop'][n])):
-                    ensemble_nums_2000.append(n)
-                    param_vals_2000.append(param_values[param][n])
-                    var_vals_2000.append(results_ppe_2000_v1[region_name][var][n])
-                    slatop_vals_2000.append(param_values['fates_leaf_slatop'][n])
-            
-            if len(ensemble_nums_v1) > 0 or len(ensemble_nums_2000) > 0:
-                # Create scatter plots with different markers
-                if len(ensemble_nums_v1) > 0:
-                    scatter = ax.scatter(param_vals_v1, var_vals_v1, s=80, alpha=0.6, 
-                                       c=slatop_vals_v1, cmap='viridis', marker='o',
-                                       edgecolors='black', linewidth=0.5, label='PPE_V1')
-                if len(ensemble_nums_2000) > 0:
-                    scatter2 = ax.scatter(param_vals_2000, var_vals_2000, s=80, alpha=0.6, 
-                                        c=slatop_vals_2000, cmap='viridis', marker='s',
-                                        edgecolors='black', linewidth=0.5, label='PPE_2000_V1')
+        # Iterate through parameters and variables
+        for param_idx, param in enumerate(PARAMETERS):
+            for var_idx, var in enumerate(VARIABLES):
+                ax = axes3[param_idx, var_idx]
                 
-                # Store scatter object for colorbar
-                if param_idx == 0 and var_idx == 0:
+                # Collect data points for PPE_V1
+                ensemble_nums_v1 = []
+                param_vals_v1 = []
+                var_vals_v1 = []
+                slatop_vals_v1 = []
+                
+                for n in sorted(results_ppe_v1[region_name][var].keys()):
+                    param_val = get_param_value_for_region(param, n, region_name)
+                    slatop_val = get_param_value_for_region('fates_leaf_slatop', n, region_name)
+                    
+                    if (n in param_values[param] and 
+                        not np.isnan(results_ppe_v1[region_name][var][n]) and 
+                        not np.isnan(param_val) and
+                        n in param_values['fates_leaf_slatop'] and
+                        not np.isnan(slatop_val)):
+                        ensemble_nums_v1.append(n)
+                        param_vals_v1.append(param_val)
+                        var_vals_v1.append(results_ppe_v1[region_name][var][n])
+                        slatop_vals_v1.append(slatop_val)
+                
+                # Collect data points for PPE_2000_V1
+                ensemble_nums_2000 = []
+                param_vals_2000 = []
+                var_vals_2000 = []
+                slatop_vals_2000 = []
+                
+                for n in sorted(results_ppe_2000_v1[region_name][var].keys()):
+                    param_val = get_param_value_for_region(param, n, region_name)
+                    slatop_val = get_param_value_for_region('fates_leaf_slatop', n, region_name)
+                    
+                    if (n in param_values[param] and 
+                        not np.isnan(results_ppe_2000_v1[region_name][var][n]) and 
+                        not np.isnan(param_val) and
+                        n in param_values['fates_leaf_slatop'] and
+                        not np.isnan(slatop_val)):
+                        ensemble_nums_2000.append(n)
+                        param_vals_2000.append(param_val)
+                        var_vals_2000.append(results_ppe_2000_v1[region_name][var][n])
+                        slatop_vals_2000.append(slatop_val)
+                
+                if len(ensemble_nums_v1) > 0 or len(ensemble_nums_2000) > 0:
+                    # Create scatter plots with different markers
                     if len(ensemble_nums_v1) > 0:
-                        scatter_objects.append(scatter)
-                    elif len(ensemble_nums_2000) > 0:
-                        scatter_objects.append(scatter2)
-                
-                # Add legend only in top-right plot
-                if param_idx == 0 and var_idx == len(VARIABLES) - 1:
-                    ax.legend(loc='best', fontsize=8)
-                
-                # Labels - x-axis = parameter values, y-axis = variable values
-                # X-axis label shows parameter name for this row
-                ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=9)
-                if var_idx == 0:
-                    # Left column: y-axis label shows variable name
-                    ax.set_ylabel(var, fontsize=10)
-                
-                # Title for top row shows variable name
-                if param_idx == 0:
-                    ax.set_title(var, fontsize=11, fontweight='bold')
-                
-                ax.grid(True, alpha=0.3)
-            else:
-                ax.text(0.5, 0.5, 'No data', ha='center', va='center', 
-                       transform=ax.transAxes)
-                ax.set_xticks([])
-                ax.set_yticks([])
+                        scatter = ax.scatter(param_vals_v1, var_vals_v1, s=80, alpha=0.6, 
+                                           c=slatop_vals_v1, cmap='viridis', marker='o',
+                                           edgecolors='black', linewidth=0.5, label='PPE_V1')
+                    if len(ensemble_nums_2000) > 0:
+                        scatter2 = ax.scatter(param_vals_2000, var_vals_2000, s=80, alpha=0.6, 
+                                            c=slatop_vals_2000, cmap='viridis', marker='s',
+                                            edgecolors='black', linewidth=0.5, label='PPE_2000_V1')
+                    
+                    # Store scatter object for colorbar
+                    if param_idx == 0 and var_idx == 0:
+                        if len(ensemble_nums_v1) > 0:
+                            scatter_objects.append(scatter)
+                        elif len(ensemble_nums_2000) > 0:
+                            scatter_objects.append(scatter2)
+                    
+                    # Add legend only in top-right plot
+                    if param_idx == 0 and var_idx == len(VARIABLES) - 1:
+                        ax.legend(loc='best', fontsize=8)
+                    
+                    # Labels - x-axis = parameter values, y-axis = variable values
+                    # X-axis label shows parameter name for this row
+                    ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=9)
+                    if var_idx == 0:
+                        # Left column: y-axis label shows variable name
+                        ax.set_ylabel(var, fontsize=10)
+                    
+                    # Title for top row shows variable name
+                    if param_idx == 0:
+                        ax.set_title(var, fontsize=11, fontweight='bold')
+                    
+                    ax.grid(True, alpha=0.3)
+                else:
+                    ax.text(0.5, 0.5, 'No data', ha='center', va='center', 
+                           transform=ax.transAxes)
+                    ax.set_xticks([])
+                    ax.set_yticks([])
 
-    # Adjust layout to make room for colorbar
-    plt.tight_layout(rect=[0, 0, 0.95, 1])
+        # Adjust layout to make room for colorbar
+        plt.tight_layout(rect=[0, 0, 0.95, 1])
 
-    # Add single colorbar on the right side
-    if scatter_objects:
-        cbar_ax = fig3.add_axes([0.96, 0.15, 0.02, 0.7])
-        cbar = fig3.colorbar(scatter_objects[0], cax=cbar_ax)
-        cbar.set_label('fates_leaf_slatop', fontsize=12)
+        # Add single colorbar on the right side
+        if scatter_objects:
+            cbar_ax = fig3.add_axes([0.96, 0.15, 0.02, 0.7])
+            cbar = fig3.colorbar(scatter_objects[0], cax=cbar_ax)
+            cbar.set_label('fates_leaf_slatop', fontsize=12)
 
-    # Save comprehensive figure
-    output_file3 = output_dir / f"parameters_vs_FATES_comprehensive_{region_name}.png"
-    fig3.savefig(output_file3, dpi=300, bbox_inches='tight')
-    print(f"  Comprehensive parameter plot saved to: {output_file3}")
-    plt.close(fig3)
+        # Save comprehensive figure
+        output_file3 = output_dir / f"parameters_vs_FATES_comprehensive_{region_name}.png"
+        fig3.savefig(output_file3, dpi=300, bbox_inches='tight')
+        print(f"  Comprehensive parameter plot saved to: {output_file3}")
+        plt.close(fig3)
 
 # Create ratio plots: PPE_2000_V1 / PPE_V1 vs Parameters for each region
-print("\n" + "="*60)
-print("Creating ratio plots (PPE_2000_V1 / PPE_V1)...")
+if ens_n != 2:
+    print("\n" + "="*60)
+    print("Creating ratio plots (PPE_2000_V1 / PPE_V1)...")
 
-for region_name in REGIONS.keys():
-    print(f"\nCreating ratio plots for region: {region_name}")
-    
-    # Create a 4x3 grid of subplots (4 parameters x 3 variables) for ratios
-    fig4, axes4 = plt.subplots(len(PARAMETERS), len(VARIABLES), figsize=(20, 16))
-    fig4.suptitle(f'FATES Variable Ratios (PPE_2000_V1 / PPE_V1) vs Parameters - {region_name.replace("_", " ").title()} (Years 05-10)', 
-                  fontsize=16, fontweight='bold', y=0.995)
-
-    # Store scatter objects for colorbar
-    scatter_objects_ratio = []
-
-    # Iterate through parameters and variables
-    for param_idx, param in enumerate(PARAMETERS):
-        for var_idx, var in enumerate(VARIABLES):
-            ax = axes4[param_idx, var_idx]
-            
-            # Collect data points
-            ensemble_nums = []
-            param_vals = []
-            ratio_vals = []
-            slatop_vals = []
-            
-            for n in sorted(results_ppe_v1[region_name][var].keys()):
-                if (n in param_values[param] and 
-                    n in results_ppe_2000_v1[region_name][var] and
-                    not np.isnan(results_ppe_v1[region_name][var][n]) and 
-                    not np.isnan(results_ppe_2000_v1[region_name][var][n]) and
-                    results_ppe_v1[region_name][var][n] != 0 and
-                    not np.isnan(param_values[param][n]) and
-                    n in param_values['fates_leaf_slatop'] and
-                    not np.isnan(param_values['fates_leaf_slatop'][n])):
-                    ensemble_nums.append(n)
-                    param_vals.append(param_values[param][n])
-                    ratio = results_ppe_2000_v1[region_name][var][n] / results_ppe_v1[region_name][var][n]
-                    ratio_vals.append(ratio)
-                    slatop_vals.append(param_values['fates_leaf_slatop'][n])
+    for region_name in REGIONS.keys():
+        print(f"\nCreating ratio plots for region: {region_name}")
         
-            if len(ensemble_nums) > 0:
-                # Create scatter plot colored by slatop values
-                scatter = ax.scatter(param_vals, ratio_vals, s=80, alpha=0.6, 
-                                   c=slatop_vals, cmap='viridis', 
-                                   edgecolors='black', linewidth=0.5)
-                
-                # Store scatter object for colorbar
-                if param_idx == 0 and var_idx == 0:
-                    scatter_objects_ratio.append(scatter)
-                
-                # Labels - x-axis = parameter values, y-axis = ratio values
-                # X-axis label shows parameter name for this row
-                ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=9)
-                if var_idx == 0:
-                    # Left column: y-axis shows ratio for this variable
-                    ax.set_ylabel(var + ' Ratio', fontsize=10)
-                
-                # Title for top row shows variable name with "Ratio"
-                if param_idx == 0:
-                    ax.set_title(var + ' Ratio', fontsize=11, fontweight='bold')
-                
-                ax.grid(True, alpha=0.3)
-            else:
-                ax.text(0.5, 0.5, 'No data', ha='center', va='center', 
-                       transform=ax.transAxes)
-                ax.set_xticks([])
-                ax.set_yticks([])
+        # Create a 4x3 grid of subplots (4 parameters x 3 variables) for ratios
+        fig4, axes4 = plt.subplots(len(PARAMETERS), len(VARIABLES), figsize=(20, 16))
+        fig4.suptitle(f'FATES Variable Ratios (PPE_2000_V1 / PPE_V1) vs Parameters - {region_name.replace("_", " ").title()} (Years 05-10)', 
+                      fontsize=16, fontweight='bold', y=0.995)
 
-    # Adjust layout to make room for colorbar
-    plt.tight_layout(rect=[0, 0, 0.95, 1])
+        # Store scatter objects for colorbar
+        scatter_objects_ratio = []
 
-    # Add single colorbar on the right side
-    if scatter_objects_ratio:
-        cbar_ax = fig4.add_axes([0.96, 0.15, 0.02, 0.7])
-        cbar = fig4.colorbar(scatter_objects_ratio[0], cax=cbar_ax)
-        cbar.set_label('fates_leaf_slatop', fontsize=12)
+        # Iterate through parameters and variables
+        for param_idx, param in enumerate(PARAMETERS):
+            for var_idx, var in enumerate(VARIABLES):
+                ax = axes4[param_idx, var_idx]
+                
+                # Collect data points
+                ensemble_nums = []
+                param_vals = []
+                ratio_vals = []
+                slatop_vals = []
+                
+                for n in sorted(results_ppe_v1[region_name][var].keys()):
+                    param_val = get_param_value_for_region(param, n, region_name)
+                    slatop_val = get_param_value_for_region('fates_leaf_slatop', n, region_name)
+                    
+                    if (n in param_values[param] and 
+                        n in results_ppe_2000_v1[region_name][var] and
+                        not np.isnan(results_ppe_v1[region_name][var][n]) and 
+                        not np.isnan(results_ppe_2000_v1[region_name][var][n]) and
+                        results_ppe_v1[region_name][var][n] != 0 and
+                        not np.isnan(param_val) and
+                        n in param_values['fates_leaf_slatop'] and
+                        not np.isnan(slatop_val)):
+                        ensemble_nums.append(n)
+                        param_vals.append(param_val)
+                        ratio = results_ppe_2000_v1[region_name][var][n] / results_ppe_v1[region_name][var][n]
+                        ratio_vals.append(ratio)
+                        slatop_vals.append(slatop_val)
+            
+                if len(ensemble_nums) > 0:
+                    # Create scatter plot colored by slatop values
+                    scatter = ax.scatter(param_vals, ratio_vals, s=80, alpha=0.6, 
+                                       c=slatop_vals, cmap='viridis', 
+                                       edgecolors='black', linewidth=0.5)
+                    
+                    # Store scatter object for colorbar
+                    if param_idx == 0 and var_idx == 0:
+                        scatter_objects_ratio.append(scatter)
+                    
+                    # Labels - x-axis = parameter values, y-axis = ratio values
+                    # X-axis label shows parameter name for this row
+                    ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=9)
+                    if var_idx == 0:
+                        # Left column: y-axis shows ratio for this variable
+                        ax.set_ylabel(var + ' Ratio', fontsize=10)
+                    
+                    # Title for top row shows variable name with "Ratio"
+                    if param_idx == 0:
+                        ax.set_title(var + ' Ratio', fontsize=11, fontweight='bold')
+                    
+                    ax.grid(True, alpha=0.3)
+                else:
+                    ax.text(0.5, 0.5, 'No data', ha='center', va='center', 
+                           transform=ax.transAxes)
+                    ax.set_xticks([])
+                    ax.set_yticks([])
 
-    # Save ratio figure
-    output_file4 = output_dir / f"parameters_vs_FATES_ratios_{region_name}.png"
-    fig4.savefig(output_file4, dpi=300, bbox_inches='tight')
-    print(f"  Ratio parameter plot saved to: {output_file4}")
-    plt.close(fig4)
+        # Adjust layout to make room for colorbar
+        plt.tight_layout(rect=[0, 0, 0.95, 1])
+
+        # Add single colorbar on the right side
+        if scatter_objects_ratio:
+            cbar_ax = fig4.add_axes([0.96, 0.15, 0.02, 0.7])
+            cbar = fig4.colorbar(scatter_objects_ratio[0], cax=cbar_ax)
+            cbar.set_label('fates_leaf_slatop', fontsize=12)
+
+        # Save ratio figure
+        output_file4 = output_dir / f"parameters_vs_FATES_ratios_{region_name}.png"
+        fig4.savefig(output_file4, dpi=300, bbox_inches='tight')
+        print(f"  Ratio parameter plot saved to: {output_file4}")
+        plt.close(fig4)
 
 # Print correlation summary for each region
 print("\n" + "="*60)
@@ -1110,10 +1279,12 @@ for region_name in REGIONS.keys():
             var_vals = []
             
             for n in sorted(results_ppe_v1[region_name][var].keys()):
+                param_val = get_param_value_for_region(param, n, region_name)
+                
                 if (n in param_values[param] and 
                     not np.isnan(results_ppe_v1[region_name][var][n]) and 
-                    not np.isnan(param_values[param][n])):
-                    param_vals.append(param_values[param][n])
+                    not np.isnan(param_val)):
+                    param_vals.append(param_val)
                     var_vals.append(results_ppe_v1[region_name][var][n])
             
             if len(param_vals) > 1:
@@ -1137,106 +1308,108 @@ for region_name in REGIONS.keys():
             print(f"  Min:  {np.min(valid_values):.4f}")
             print(f"  Max:  {np.max(valid_values):.4f}")
 
-    print("\n" + "="*60)
-    print(f"SUMMARY STATISTICS FOR {region_name.upper().replace('_', ' ')} - PPE_2000_V1:")
-    for var in VARIABLES:
-        valid_values = [v for v in results_ppe_2000_v1[region_name][var].values() if not np.isnan(v)]
-        if valid_values:
-            print(f"\n{var}:")
-            print(f"  Mean: {np.mean(valid_values):.4f}")
-            print(f"  Std:  {np.std(valid_values):.4f}")
-            print(f"  Min:  {np.min(valid_values):.4f}")
-            print(f"  Max:  {np.max(valid_values):.4f}")
+    if ens_n != 2:
+        print("\n" + "="*60)
+        print(f"SUMMARY STATISTICS FOR {region_name.upper().replace('_', ' ')} - PPE_2000_V1:")
+        for var in VARIABLES:
+            valid_values = [v for v in results_ppe_2000_v1[region_name][var].values() if not np.isnan(v)]
+            if valid_values:
+                print(f"\n{var}:")
+                print(f"  Mean: {np.mean(valid_values):.4f}")
+                print(f"  Std:  {np.std(valid_values):.4f}")
+                print(f"  Min:  {np.min(valid_values):.4f}")
+                print(f"  Max:  {np.max(valid_values):.4f}")
 
-    print("\n" + "="*60)
-    print(f"SUMMARY STATISTICS FOR {region_name.upper().replace('_', ' ')} - RATIOS (PPE_2000_V1 / PPE_V1):")
-    for var in VARIABLES:
-        ratios = []
-        for n in results_ppe_v1[region_name][var].keys():
-            if (n in results_ppe_2000_v1[region_name][var] and 
-                not np.isnan(results_ppe_v1[region_name][var][n]) and 
-                not np.isnan(results_ppe_2000_v1[region_name][var][n]) and
-                results_ppe_v1[region_name][var][n] != 0):
-                ratio = results_ppe_2000_v1[region_name][var][n] / results_ppe_v1[region_name][var][n]
-                ratios.append(ratio)
-        
-        if ratios:
-            print(f"\n{var}:")
-            print(f"  Mean: {np.mean(ratios):.4f}")
-            print(f"  Std:  {np.std(ratios):.4f}")
-            print(f"  Min:  {np.min(ratios):.4f}")
-            print(f"  Max:  {np.max(ratios):.4f}")
+        print("\n" + "="*60)
+        print(f"SUMMARY STATISTICS FOR {region_name.upper().replace('_', ' ')} - RATIOS (PPE_2000_V1 / PPE_V1):")
+        for var in VARIABLES:
+            ratios = []
+            for n in results_ppe_v1[region_name][var].keys():
+                if (n in results_ppe_2000_v1[region_name][var] and 
+                    not np.isnan(results_ppe_v1[region_name][var][n]) and 
+                    not np.isnan(results_ppe_2000_v1[region_name][var][n]) and
+                    results_ppe_v1[region_name][var][n] != 0):
+                    ratio = results_ppe_2000_v1[region_name][var][n] / results_ppe_v1[region_name][var][n]
+                    ratios.append(ratio)
+            
+            if ratios:
+                print(f"\n{var}:")
+                print(f"  Mean: {np.mean(ratios):.4f}")
+                print(f"  Std:  {np.std(ratios):.4f}")
+                print(f"  Min:  {np.min(ratios):.4f}")
+                print(f"  Max:  {np.max(ratios):.4f}")
 
 print(f"\nAll figures saved to: {output_dir}")
 
 # Identify parameter space with high NPP in v1 and low LAI in 2000 ensemble
-print("\n" + "="*60)
-print("IDENTIFYING PARAMETER SPACE:")
-print("High NPP in PPE_V1 AND Low LAI in PPE_2000_V1")
-print("="*60)
+if ens_n != 2:
+    print("\n" + "="*60)
+    print("IDENTIFYING PARAMETER SPACE:")
+    print("High NPP in PPE_V1 AND Low LAI in PPE_2000_V1")
+    print("="*60)
 
-for region_name in REGIONS.keys():
-    print(f"\n{region_name.upper().replace('_', ' ')}:")
-    
-    # Get all ensemble members with valid data
-    ensemble_nums = sorted(results_ppe_v1[region_name]['FATES_NPP'].keys())
-    
-    # Calculate thresholds
-    npp_v1_values = [results_ppe_v1[region_name]['FATES_NPP'][n] for n in ensemble_nums 
-                     if not np.isnan(results_ppe_v1[region_name]['FATES_NPP'].get(n, np.nan))]
-    lai_2000_values = [results_ppe_2000_v1[region_name]['FATES_LAI'][n] for n in ensemble_nums 
-                       if not np.isnan(results_ppe_2000_v1[region_name]['FATES_LAI'].get(n, np.nan))]
-    
-    if len(npp_v1_values) > 0 and len(lai_2000_values) > 0:
-        # Define "high" as above 75th percentile, "low" as below 25th percentile
-        high_npp_threshold = np.percentile(npp_v1_values, 75)
-        low_lai_threshold = np.percentile(lai_2000_values, 25)
+    for region_name in REGIONS.keys():
+        print(f"\n{region_name.upper().replace('_', ' ')}:")
         
-        print(f"  High NPP threshold (75th percentile): {high_npp_threshold:.4f}")
-        print(f"  Low LAI threshold (25th percentile): {low_lai_threshold:.4f}")
+        # Get all ensemble members with valid data
+        ensemble_nums = sorted(results_ppe_v1[region_name]['FATES_NPP'].keys())
         
-        # Find ensemble members meeting both criteria
-        selected_members = []
-        for n in ensemble_nums:
-            npp_v1 = results_ppe_v1[region_name]['FATES_NPP'].get(n, np.nan)
-            lai_2000 = results_ppe_2000_v1[region_name]['FATES_LAI'].get(n, np.nan)
+        # Calculate thresholds
+        npp_v1_values = [results_ppe_v1[region_name]['FATES_NPP'][n] for n in ensemble_nums 
+                         if not np.isnan(results_ppe_v1[region_name]['FATES_NPP'].get(n, np.nan))]
+        lai_2000_values = [results_ppe_2000_v1[region_name]['FATES_LAI'][n] for n in ensemble_nums 
+                           if not np.isnan(results_ppe_2000_v1[region_name]['FATES_LAI'].get(n, np.nan))]
+        
+        if len(npp_v1_values) > 0 and len(lai_2000_values) > 0:
+            # Define "high" as above 75th percentile, "low" as below 25th percentile
+            high_npp_threshold = np.percentile(npp_v1_values, 75)
+            low_lai_threshold = np.percentile(lai_2000_values, 25)
             
-            if (not np.isnan(npp_v1) and not np.isnan(lai_2000) and 
-                npp_v1 >= high_npp_threshold and lai_2000 <= low_lai_threshold):
-                selected_members.append(n)
-        
-        if selected_members:
-            print(f"\n  Ensemble members meeting criteria: {selected_members}")
-            print("\n  Parameter values for selected members:")
-            print(f"  {'Member':<8} {'NPP_V1':<10} {'LAI_2000':<10}", end='')
-            for param in PARAMETERS:
-                print(f" {param.replace('fates_', ''):<20}", end='')
-            print()
+            print(f"  High NPP threshold (75th percentile): {high_npp_threshold:.4f}")
+            print(f"  Low LAI threshold (25th percentile): {low_lai_threshold:.4f}")
             
-            for n in selected_members:
-                npp_v1 = results_ppe_v1[region_name]['FATES_NPP'][n]
-                lai_2000 = results_ppe_2000_v1[region_name]['FATES_LAI'][n]
-                print(f"  n{n:02d}      {npp_v1:<10.4f} {lai_2000:<10.4f}", end='')
+            # Find ensemble members meeting both criteria
+            selected_members = []
+            for n in ensemble_nums:
+                npp_v1 = results_ppe_v1[region_name]['FATES_NPP'].get(n, np.nan)
+                lai_2000 = results_ppe_2000_v1[region_name]['FATES_LAI'].get(n, np.nan)
+                
+                if (not np.isnan(npp_v1) and not np.isnan(lai_2000) and 
+                    npp_v1 >= high_npp_threshold and lai_2000 <= low_lai_threshold):
+                    selected_members.append(n)
+            
+            if selected_members:
+                print(f"\n  Ensemble members meeting criteria: {selected_members}")
+                print("\n  Parameter values for selected members:")
+                print(f"  {'Member':<8} {'NPP_V1':<10} {'LAI_2000':<10}", end='')
                 for param in PARAMETERS:
-                    val = param_values[param].get(n, np.nan)
-                    print(f" {val:<20.6f}", end='')
+                    print(f" {param.replace('fates_', ''):<20}", end='')
                 print()
-            
-            # Save to CSV
-            csv_data = {
-                'ensemble_member': selected_members,
-                'FATES_NPP_PPE_V1': [results_ppe_v1[region_name]['FATES_NPP'][n] for n in selected_members],
-                'FATES_LAI_PPE_2000_V1': [results_ppe_2000_v1[region_name]['FATES_LAI'][n] for n in selected_members]
-            }
-            for param in PARAMETERS:
-                csv_data[param] = [param_values[param].get(n, np.nan) for n in selected_members]
-            
-            df_selected = pd.DataFrame(csv_data)
-            year_range_str = f"years{min(YEARS):02d}-{max(YEARS):02d}"
-            csv_file = csv_dir / f"selected_high_NPP_low_LAI_{year_range_str}_{region_name}.csv"
-            df_selected.to_csv(csv_file, index=False)
-            print(f"\n  Saved selected members to: {csv_file}")
+                
+                for n in selected_members:
+                    npp_v1 = results_ppe_v1[region_name]['FATES_NPP'][n]
+                    lai_2000 = results_ppe_2000_v1[region_name]['FATES_LAI'][n]
+                    print(f"  n{n:02d}      {npp_v1:<10.4f} {lai_2000:<10.4f}", end='')
+                    for param in PARAMETERS:
+                        val = param_values[param].get(n, np.nan)
+                        print(f" {val:<20.6f}", end='')
+                    print()
+                
+                # Save to CSV
+                csv_data = {
+                    'ensemble_member': selected_members,
+                    'FATES_NPP_PPE_V1': [results_ppe_v1[region_name]['FATES_NPP'][n] for n in selected_members],
+                    'FATES_LAI_PPE_2000_V1': [results_ppe_2000_v1[region_name]['FATES_LAI'][n] for n in selected_members]
+                }
+                for param in PARAMETERS:
+                    csv_data[param] = [param_values[param].get(n, np.nan) for n in selected_members]
+                
+                df_selected = pd.DataFrame(csv_data)
+                year_range_str = f"years{min(YEARS):02d}-{max(YEARS):02d}"
+                csv_file = csv_dir / f"selected_high_NPP_low_LAI_{year_range_str}_{region_name}.csv"
+                df_selected.to_csv(csv_file, index=False)
+                print(f"\n  Saved selected members to: {csv_file}")
+            else:
+                print("\n  No ensemble members meet both criteria.")
         else:
-            print("\n  No ensemble members meet both criteria.")
-    else:
-        print("  Insufficient data for analysis.")
+            print("  Insufficient data for analysis.")
