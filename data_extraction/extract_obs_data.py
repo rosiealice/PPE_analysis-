@@ -91,10 +91,16 @@ else: print(f"  ✗ No C4 grid cells")
 # Initialize dictionaries to store results - ensure all regions start with NaN
 obs_lai_modis = {region: np.nan for region in REGIONS}
 obs_lai_avhrr = {region: np.nan for region in REGIONS}
+obs_lai_avhrr_summer = {region: np.nan for region in REGIONS}
+obs_lai_avhrr_annual_max = {region: np.nan for region in REGIONS}
 obs_lai_modis_summer = {region: np.nan for region in REGIONS}
 obs_lai_modis_annual_max = {region: np.nan for region in REGIONS}
 obs_gpp_fluxcom = {region: np.nan for region in REGIONS}
+obs_gpp_fluxcom_summer = {region: np.nan for region in REGIONS}
+obs_gpp_fluxcom_annual_max = {region: np.nan for region in REGIONS}
 obs_gpp_wecann = {region: np.nan for region in REGIONS}
+obs_gpp_wecann_summer = {region: np.nan for region in REGIONS}
+obs_gpp_wecann_annual_max = {region: np.nan for region in REGIONS}
 
 # Store point-level data for each region and dataset
 point_data = {}
@@ -320,42 +326,76 @@ try:
                 )
                 obs_lai_avhrr[region] = float(ds_subset.mean(skipna=True).values)
         
-        # Extract for specific grid cells
+        # Extract annual mean for specific grid cells
+        print("\n  Extracting annual mean AVHRR LAI:")
         if BDT_GRID_CELLS:
             values, points = extract_grid_cell_values(ds_avhrr, lai_var, BDT_GRID_CELLS)
             obs_lai_avhrr['BDTs'] = np.nanmean(values)
             point_data['BDTs_avhrr_lai'] = points
-            print(f"BDTs: {obs_lai_avhrr['BDTs']:.4f}")
+            print(f"  BDTs: {obs_lai_avhrr['BDTs']:.4f}")
         
         if BET_GRID_CELLS:
             values, points = extract_grid_cell_values(ds_avhrr, lai_var, BET_GRID_CELLS)
             obs_lai_avhrr['BETs'] = np.nanmean(values)
             point_data['BETs_avhrr_lai'] = points
-            print(f"BETs: {obs_lai_avhrr['BETs']:.4f}")
+            print(f"  BETs: {obs_lai_avhrr['BETs']:.4f}")
         
         if ENT_GRID_CELLS:
-            values, points = extract_grid_cell_values(ds_avhrr, lai_var, ENT_GRID_CELLS, summer_months=True)
+            values, points = extract_grid_cell_values(ds_avhrr, lai_var, ENT_GRID_CELLS)
             obs_lai_avhrr['ENTs'] = np.nanmean(values)
             point_data['ENTs_avhrr_lai'] = points
-            print(f"ENTs: {obs_lai_avhrr['ENTs']:.4f}")
+            print(f"  ENTs: {obs_lai_avhrr['ENTs']:.4f}")
         
         if AC3G_GRID_CELLS:
             values, points = extract_grid_cell_values(ds_avhrr, lai_var, AC3G_GRID_CELLS)
             obs_lai_avhrr['AC3G'] = np.nanmean(values)
             point_data['AC3G_avhrr_lai'] = points
-            print(f"AC3G: {obs_lai_avhrr['AC3G']:.4f}")
+            print(f"  AC3G: {obs_lai_avhrr['AC3G']:.4f}")
         
         if C3G_GRID_CELLS:
             values, points = extract_grid_cell_values(ds_avhrr, lai_var, C3G_GRID_CELLS)
             obs_lai_avhrr['C3G'] = np.nanmean(values)
             point_data['C3G_avhrr_lai'] = points
-            print(f"C3G: {obs_lai_avhrr['C3G']:.4f}")
+            print(f"  C3G: {obs_lai_avhrr['C3G']:.4f}")
         
         if C4_GRID_CELLS:
             values, points = extract_grid_cell_values(ds_avhrr, lai_var, C4_GRID_CELLS)
             obs_lai_avhrr['C4'] = np.nanmean(values)
             point_data['C4_avhrr_lai'] = points
-            print(f"C4: {obs_lai_avhrr['C4']:.4f}")
+            print(f"  C4: {obs_lai_avhrr['C4']:.4f}")
+        
+        # Extract summer LAI for all regions
+        print("\n  Extracting summer (JJA) AVHRR LAI:")
+        for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                   ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                   ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+            if grid_cells:
+                values, points = extract_grid_cell_values(ds_avhrr, lai_var, grid_cells, summer_months=True)
+                obs_lai_avhrr_summer[region] = np.nanmean(values)
+                point_data[f'{region}_avhrr_lai_summer'] = points
+                print(f"  {region}: {obs_lai_avhrr_summer[region]:.4f}")
+        
+        # Extract annual maximum LAI for all regions (average of annual maxima)
+        print("\n  Extracting average annual maximum AVHRR LAI:")
+        if 'time' in ds_avhrr[lai_var].dims:
+            for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                       ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                       ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+                if grid_cells:
+                    values = []
+                    points = []
+                    for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                        data_point = ds_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest')
+                        # Get average annual maximum (max per year, then average across years)
+                        annual_maxima = data_point.groupby('time.year').max(skipna=True)
+                        avg_annual_max = annual_maxima.mean(skipna=True).values
+                        values.append(float(avg_annual_max))
+                        points.append({'lat': lat, 'lon': lon, 'value': float(avg_annual_max)})
+                    obs_lai_avhrr_annual_max[region] = np.nanmean(values)
+                    point_data[f'{region}_avhrr_lai_annual_max'] = points
+                    print(f"  {region}: {obs_lai_avhrr_annual_max[region]:.4f}")
+        else:
+            print("  No time dimension found - skipping annual max calculation")
     
     ds_avhrr.close()
     
@@ -427,30 +467,38 @@ try:
             point_data['C4_fluxcom_gpp'] = points
             print(f"C4: {obs_gpp_fluxcom['C4']:.4f}")
         
-        if BET_GRID_CELLS:
-            values = extract_grid_cell_values(ds_fluxcom, gpp_var, BET_GRID_CELLS)
-            obs_gpp_fluxcom['BETs'] = np.nanmean(values)
-            print(f"BETs: {obs_gpp_fluxcom['BETs']:.4f}")
+        # Extract summer (JJA) GPP for all regions
+        print("\n  Extracting summer (JJA) FLUXCOM GPP:")
+        for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                   ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                   ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+            if grid_cells:
+                values, points = extract_grid_cell_values(ds_fluxcom, gpp_var, grid_cells, summer_months=True)
+                obs_gpp_fluxcom_summer[region] = np.nanmean(values)
+                point_data[f'{region}_fluxcom_gpp_summer'] = points
+                print(f"  {region}: {obs_gpp_fluxcom_summer[region]:.4f}")
         
-        if ENT_GRID_CELLS:
-            values = extract_grid_cell_values(ds_fluxcom, gpp_var, ENT_GRID_CELLS)
-            obs_gpp_fluxcom['ENTs'] = np.nanmean(values)
-            print(f"ENTs: {obs_gpp_fluxcom['ENTs']:.4f}")
-        
-        if AC3G_GRID_CELLS:
-            values = extract_grid_cell_values(ds_fluxcom, gpp_var, AC3G_GRID_CELLS)
-            obs_gpp_fluxcom['AC3G'] = np.nanmean(values)
-            print(f"AC3G: {obs_gpp_fluxcom['AC3G']:.4f}")
-        
-        if C3G_GRID_CELLS:
-            values = extract_grid_cell_values(ds_fluxcom, gpp_var, C3G_GRID_CELLS)
-            obs_gpp_fluxcom['C3G'] = np.nanmean(values)
-            print(f"C3G: {obs_gpp_fluxcom['C3G']:.4f}")
-        
-        if C4_GRID_CELLS:
-            values = extract_grid_cell_values(ds_fluxcom, gpp_var, C4_GRID_CELLS)
-            obs_gpp_fluxcom['C4'] = np.nanmean(values)
-            print(f"C4: {obs_gpp_fluxcom['C4']:.4f}")
+        # Extract average annual maximum GPP for all regions
+        print("\n  Extracting average annual maximum FLUXCOM GPP:")
+        if 'time' in ds_fluxcom[gpp_var].dims:
+            for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                       ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                       ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+                if grid_cells:
+                    values = []
+                    points = []
+                    for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                        data_point = ds_fluxcom[gpp_var].sel(lat=lat, lon=lon, method='nearest')
+                        # Get average annual maximum (max per year, then average across years)
+                        annual_maxima = data_point.groupby('time.year').max(skipna=True)
+                        avg_annual_max = annual_maxima.mean(skipna=True).values
+                        values.append(float(avg_annual_max))
+                        points.append({'lat': lat, 'lon': lon, 'value': float(avg_annual_max)})
+                    obs_gpp_fluxcom_annual_max[region] = np.nanmean(values)
+                    point_data[f'{region}_fluxcom_gpp_annual_max'] = points
+                    print(f"  {region}: {obs_gpp_fluxcom_annual_max[region]:.4f}")
+        else:
+            print("  No time dimension found - skipping annual max calculation")
     
     ds_fluxcom.close()
     
@@ -521,6 +569,39 @@ try:
             obs_gpp_wecann['C4'] = np.nanmean(values)
             point_data['C4_wecann_gpp'] = points
             print(f"C4: {obs_gpp_wecann['C4']:.4f}")
+        
+        # Extract summer (JJA) GPP for all regions
+        print("\n  Extracting summer (JJA) WECANN GPP:")
+        for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                   ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                   ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+            if grid_cells:
+                values, points = extract_grid_cell_values(ds_wecann, gpp_var, grid_cells, summer_months=True)
+                obs_gpp_wecann_summer[region] = np.nanmean(values)
+                point_data[f'{region}_wecann_gpp_summer'] = points
+                print(f"  {region}: {obs_gpp_wecann_summer[region]:.4f}")
+        
+        # Extract average annual maximum GPP for all regions
+        print("\n  Extracting average annual maximum WECANN GPP:")
+        if 'time' in ds_wecann[gpp_var].dims:
+            for region, grid_cells in [('BDTs', BDT_GRID_CELLS), ('BETs', BET_GRID_CELLS), 
+                                       ('ENTs', ENT_GRID_CELLS), ('AC3G', AC3G_GRID_CELLS),
+                                       ('C3G', C3G_GRID_CELLS), ('C4', C4_GRID_CELLS)]:
+                if grid_cells:
+                    values = []
+                    points = []
+                    for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                        data_point = ds_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest')
+                        # Get average annual maximum (max per year, then average across years)
+                        annual_maxima = data_point.groupby('time.year').max(skipna=True)
+                        avg_annual_max = annual_maxima.mean(skipna=True).values
+                        values.append(float(avg_annual_max))
+                        points.append({'lat': lat, 'lon': lon, 'value': float(avg_annual_max)})
+                    obs_gpp_wecann_annual_max[region] = np.nanmean(values)
+                    point_data[f'{region}_wecann_gpp_annual_max'] = points
+                    print(f"  {region}: {obs_gpp_wecann_annual_max[region]:.4f}")
+        else:
+            print("  No time dimension found - skipping annual max calculation")
     
     ds_wecann.close()
     
@@ -539,8 +620,14 @@ df_all['lai_modis'] = [obs_lai_modis.get(r, np.nan) for r in REGIONS]
 df_all['lai_modis_summer'] = [obs_lai_modis_summer.get(r, np.nan) for r in REGIONS]
 df_all['lai_modis_annual_max'] = [obs_lai_modis_annual_max.get(r, np.nan) for r in REGIONS]
 df_all['lai_avhrr'] = [obs_lai_avhrr.get(r, np.nan) for r in REGIONS]
+df_all['lai_avhrr_summer'] = [obs_lai_avhrr_summer.get(r, np.nan) for r in REGIONS]
+df_all['lai_avhrr_annual_max'] = [obs_lai_avhrr_annual_max.get(r, np.nan) for r in REGIONS]
 df_all['gpp_fluxcom'] = [obs_gpp_fluxcom.get(r, np.nan) for r in REGIONS]
+df_all['gpp_fluxcom_summer'] = [obs_gpp_fluxcom_summer.get(r, np.nan) for r in REGIONS]
+df_all['gpp_fluxcom_annual_max'] = [obs_gpp_fluxcom_annual_max.get(r, np.nan) for r in REGIONS]
 df_all['gpp_wecann'] = [obs_gpp_wecann.get(r, np.nan) for r in REGIONS]
+df_all['gpp_wecann_summer'] = [obs_gpp_wecann_summer.get(r, np.nan) for r in REGIONS]
+df_all['gpp_wecann_annual_max'] = [obs_gpp_wecann_annual_max.get(r, np.nan) for r in REGIONS]
 
 # Write to CSV
 output_file = OUTPUT_DIR / "obs_gpp_lai_data.csv"
