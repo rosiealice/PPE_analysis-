@@ -11,26 +11,10 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.stats import qmc
 from sklearn.linear_model import LinearRegression
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 from sklearn.preprocessing import StandardScaler
-
-# EMULATOR CONFIGURATION
-# Choose emulator type: 'linear' or 'gp' (Gaussian Process)
-EMULATOR_TYPE = 'linear'  # Change to 'gp' for Gaussian Process emulator
 import xarray as xr
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-
-def get_emulator():
-    """Return the appropriate emulator based on EMULATOR_TYPE setting"""
-    if EMULATOR_TYPE == 'gp':
-        # Gaussian Process with RBF kernel
-        kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=[1.0]*5, length_scale_bounds=(1e-2, 1e2)) + WhiteKernel(noise_level=1e-5)
-        return GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, alpha=1e-6, normalize_y=True)
-    else:
-        # Linear Regression (default)
-        return LinearRegression()
 
 # Configuration
 DATA_DIR = Path("/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/")
@@ -118,8 +102,6 @@ print(f"\nReading observational data from {OBS_DATA_CSV}...")
 
 obs_gpp_regional = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
 obs_gpp_regional_wecann = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
-obs_gpp_regional_fluxcom_annual_max = {region: np.nan for region in REGIONS}  # For annual max FLUXCOM GPP
-obs_gpp_regional_wecann_annual_max = {region: np.nan for region in REGIONS}  # For annual max WECANN GPP
 obs_lai_regional = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
 obs_lai_regional_avhrr = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
 obs_lai_regional_avhrr_summer = {region: np.nan for region in REGIONS}  # For summer AVHRR LAI
@@ -137,14 +119,14 @@ if OBS_DATA_CSV.exists():
     for _, row in obs_df.iterrows():
         region = row.get('region', None)
         if region in REGIONS:
-            # GPP observations - use annual max values for ENTs
+            # GPP observations - use summer values for ENTs
             if region == 'ENTs':
-                if 'gpp_fluxcom_annual_max' in obs_df.columns and not pd.isna(row['gpp_fluxcom_annual_max']):
-                    obs_gpp_regional_fluxcom_annual_max[region] = float(row['gpp_fluxcom_annual_max'])
-                    print(f"  {region} FLUXCOM Annual Max GPP: {obs_gpp_regional_fluxcom_annual_max[region]:.4f}")
-                if 'gpp_wecann_annual_max' in obs_df.columns and not pd.isna(row['gpp_wecann_annual_max']):
-                    obs_gpp_regional_wecann_annual_max[region] = float(row['gpp_wecann_annual_max'])
-                    print(f"  {region} WECANN Annual Max GPP: {obs_gpp_regional_wecann_annual_max[region]:.4f}")
+                if 'gpp_fluxcom_summer' in obs_df.columns and not pd.isna(row['gpp_fluxcom_summer']):
+                    obs_gpp_regional[region] = float(row['gpp_fluxcom_summer'])
+                    print(f"  {region} FLUXCOM Summer GPP: {obs_gpp_regional[region]:.4f}")
+                if 'gpp_wecann_summer' in obs_df.columns and not pd.isna(row['gpp_wecann_summer']):
+                    obs_gpp_regional_wecann[region] = float(row['gpp_wecann_summer'])
+                    print(f"  {region} WECANN Summer GPP: {obs_gpp_regional_wecann[region]:.4f}")
             else:
                 if 'gpp_fluxcom' in obs_df.columns and not pd.isna(row['gpp_fluxcom']):
                     obs_gpp_regional[region] = float(row['gpp_fluxcom'])
@@ -154,10 +136,10 @@ if OBS_DATA_CSV.exists():
                     print(f"  {region} WECANN GPP: {obs_gpp_regional_wecann[region]:.4f}")
             
             # LAI observations
-            # For ENTs, use annual max LAI; for others use regular LAI
-            if region == 'ENTs' and 'lai_modis_annual_max' in obs_df.columns and not pd.isna(row['lai_modis_annual_max']):
-                obs_lai_regional[region] = float(row['lai_modis_annual_max'])
-                print(f"  {region} MODIS Annual Max LAI: {obs_lai_regional[region]:.4f}")
+            # For ENTs, use summer LAI; for others use regular LAI
+            if region == 'ENTs' and 'lai_modis_summer' in obs_df.columns and not pd.isna(row['lai_modis_summer']):
+                obs_lai_regional[region] = float(row['lai_modis_summer'])
+                print(f"  {region} MODIS Summer LAI: {obs_lai_regional[region]:.4f}")
             elif 'lai_modis' in obs_df.columns and not pd.isna(row['lai_modis']):
                 obs_lai_regional[region] = float(row['lai_modis'])
                 print(f"  {region} MODIS LAI: {obs_lai_regional[region]:.4f}")
@@ -262,7 +244,7 @@ for region in REGIONS:
         continue
     
     # Convert FATES_GPP variables from kgC m-2 s-1 to gC m-2 day-1
-    gpp_vars_to_convert = ['FATES_GPP_PPE_V1', 'FATES_GPP_PPE_2000_V1', 'fates_gpp_summer_PPE_V1', 'fates_gpp_summer_PPE_2000_V1', 'fates_gpp_max_PPE_V1', 'fates_gpp_max_PPE_2000_V1']
+    gpp_vars_to_convert = ['FATES_GPP_PPE_V1', 'FATES_GPP_PPE_2000_V1', 'fates_gpp_summer_PPE_V1', 'fates_gpp_summer_PPE_2000_V1']
     for gpp_var in gpp_vars_to_convert:
         if gpp_var in data[region].columns:
             data[region][gpp_var] = data[region][gpp_var] * GPP_CONVERSION_FACTOR
@@ -279,7 +261,7 @@ for region in REGIONS:
 def get_lai_column(region, df=None):
     """
     Returns the appropriate LAI column for a given region.
-    For ENTs (PFT 2), use average annual maximum LAI.
+    For ENTs (PFT 2), use summer LAI (months 6, 7, 8).
     For other regions, use regular LAI.
     Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available.
     
@@ -292,8 +274,8 @@ def get_lai_column(region, df=None):
     """
     if region == 'ENTs':
         # Try 2000 version first, then V1 version
-        col_2000 = 'fates_lai_max_PPE_2000_V1'
-        col_v1 = 'fates_lai_max_PPE_V1'
+        col_2000 = 'fates_lai_summer_PPE_2000_V1'
+        col_v1 = 'fates_lai_summer_PPE_V1'
         if df is not None:
             if col_2000 in df.columns:
                 return col_2000
@@ -325,7 +307,7 @@ def get_lai_label(region):
         Label string (e.g., 'LAI(2000)' or 'Summer LAI(2000)')
     """
     if region == 'ENTs':
-        return 'Max LAI'
+        return 'Summer LAI'
     else:
         return 'LAI'
 
@@ -333,7 +315,7 @@ def get_lai_label(region):
 def get_gpp_column(region, df=None):
     """
     Returns the appropriate GPP column for a given region.
-    For ENTs (PFT 2), use average annual maximum GPP.
+    For ENTs (PFT 2), use summer GPP (months 6, 7, 8).
     For other regions, use regular GPP.
     Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available.
     
@@ -346,8 +328,8 @@ def get_gpp_column(region, df=None):
     """
     if region == 'ENTs':
         # Try 2000 version first, then V1 version
-        col_2000 = 'fates_gpp_max_PPE_2000_V1'
-        col_v1 = 'fates_gpp_max_PPE_V1'
+        col_2000 = 'fates_gpp_summer_PPE_2000_V1'
+        col_v1 = 'fates_gpp_summer_PPE_V1'
         if df is not None:
             if col_2000 in df.columns:
                 return col_2000
@@ -381,7 +363,7 @@ def get_gpp_label(region):
         Label string
     """
     if region == 'ENTs':
-        return 'Max GPP'
+        return 'Summer GPP'
     else:
         return 'GPP'
 
@@ -453,16 +435,16 @@ for region in REGIONS:
         print(f"  WARNING: LAI column not available, using GPP values for coloring")
         y_lai = y  # Fallback to GPP if LAI not available
     
-    # Train emulator for GPP
-    print(f"  Training GPP emulator ({EMULATOR_TYPE.upper()}) on {len(df_clean)} ensemble members...")
-    lr = get_emulator()
+    # Train Linear Regression emulator for GPP
+    print(f"  Training GPP emulator on {len(df_clean)} ensemble members...")
+    lr = LinearRegression()
     lr.fit(X, y)
     
     # Train LAI emulator if LAI data is available
     if lai_col in df_clean.columns:
-        lr_lai = get_emulator()
+        lr_lai = LinearRegression()
         lr_lai.fit(X, y_lai)
-        print(f"  Training LAI emulator ({EMULATOR_TYPE.upper()})...")
+        print(f"  Training LAI emulator...")
     
     # Evaluate emulator skill
     y_pred_train = lr.predict(X)
@@ -951,7 +933,7 @@ for region in REGIONS:
     print(f"\n{'='*50}")
     print(f"Region: {region.replace('_', ' ').title()}")
     if region == 'ENTs':
-        print(f"Using average annual maximum LAI")
+        print(f"Using summer LAI (months 6, 7, 8)")
     print(f"{'='*50}")
     
     # Remove any rows with NaN
@@ -968,9 +950,8 @@ for region in REGIONS:
     X = df_clean[params].values
     y_lai = df_clean[lai_col].values
     
-    lr_lai = get_emulator()
+    lr_lai = LinearRegression()
     lr_lai.fit(X, y_lai)
-    print(f"  Using {EMULATOR_TYPE.upper()} emulator")
     
     # Check training skill
     y_lai_pred_train = lr_lai.predict(X)
@@ -1052,21 +1033,34 @@ for region in REGIONS:
                 print(f"    ✓ Adding MODIS {'Summer ' if region == 'ENTs' else ''}{lai_label} line at y={obs_lai:.4f}")
             if region == 'ENTs':
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
-                          alpha=0.8, label=f'MODIS Annual Max LAI: {obs_lai_regional_annual_max_ent.get(region, obs_lai):.2f}', zorder=1)
+                          alpha=0.8, label=f'MODIS Summer {lai_label}: {obs_lai:.2f}', zorder=1)
             else:
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                           alpha=0.8, label=f'MODIS {lai_label}: {obs_lai:.2f}', zorder=1)
         elif idx == 0:
             print(f"    ✗ Skipping MODIS line (value is NaN)")
             
+        if region == 'ENTs' and region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+            if idx == 0:
+                print(f"    ✓ Adding MODIS Mean {lai_label} line at y={obs_lai_regional_mean_ent[region]:.4f}")
+            ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
+                      alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=1)
+        elif idx == 0 and region == 'ENTs':
+            print(f"    ✗ Skipping MODIS Mean line (value is NaN or key not in dict)")
+            
+        if region == 'ENTs' and region in obs_lai_regional_annual_max_ent and not np.isnan(obs_lai_regional_annual_max_ent[region]):
+            if idx == 0:
+                print(f"    ✓ Adding MODIS Annual Max {lai_label} line at y={obs_lai_regional_annual_max_ent[region]:.4f}")
+            ax.axhline(obs_lai_regional_annual_max_ent[region], color='purple', linestyle=':', linewidth=2,
+                      alpha=0.8, label=f'MODIS Annual Max {lai_label}: {obs_lai_regional_annual_max_ent[region]:.2f}', zorder=1)
+        elif idx == 0 and region == 'ENTs':
+            print(f"    ✗ Skipping MODIS Annual Max line (value is NaN or key not in dict)")
+            
         if not np.isnan(obs_lai_avhrr):
             if idx == 0:
-                print(f"    ✓ Adding AVHRR {'Annual Max ' if region == 'ENTs' else ''}{lai_label} line at y={obs_lai_avhrr:.4f}")
-            # For ENTs, use annual max; for others use regular value
-            avhrr_val = obs_lai_regional_annual_max_avhrr_ent.get(region, obs_lai_avhrr) if region == 'ENTs' else obs_lai_avhrr
-            avhrr_label_suffix = ' Annual Max' if region == 'ENTs' else ''
-            ax.axhline(avhrr_val, color='limegreen', linestyle=':', linewidth=2,
-                      alpha=0.8, label=f'AVHRR{avhrr_label_suffix} {lai_label}: {avhrr_val:.2f}', zorder=1)
+                print(f"    ✓ Adding AVHRR {lai_label} line at y={obs_lai_avhrr:.4f}")
+            ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2,
+                      alpha=0.8, label=f'AVHRR {lai_label}: {obs_lai_avhrr:.2f}', zorder=1)
         elif idx == 0:
             print(f"    ✗ Skipping AVHRR line (value is NaN)")
         
@@ -1198,7 +1192,7 @@ for region in REGIONS:
     
     if gpp_col_for_emul in df_clean.columns:
         y_gpp = df_clean[gpp_col_for_emul].values
-        lr_gpp_lai = get_emulator()
+        lr_gpp_lai = LinearRegression()
         lr_gpp_lai.fit(X, y_gpp)
         gpp_emul_pred = lr_gpp_lai.predict(lhs_emul)
         
@@ -1249,18 +1243,29 @@ for region in REGIONS:
         # Add observational LAI as horizontal line
         if not np.isnan(obs_lai):
             if region == 'ENTs':
-                # For ENTs, obs_lai now contains the annual max
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
-                          alpha=0.8, label=f'MODIS Annual Max {lai_label}: {obs_lai:.2f}', zorder=2)
+                          alpha=0.8, label=f'MODIS Summer {lai_label}: {obs_lai:.2f}', zorder=2)
             else:
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                           alpha=0.8, label=f'MODIS {lai_label}: {obs_lai:.2f}', zorder=2)
         
-        # Add ENT-specific annual max LAI observations
+        # Add ENT-specific LAI observations (mean and max for both MODIS and AVHRR)
         if region == 'ENTs':
+            if region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+                ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
+                          alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=2)
+            if region in obs_lai_regional_annual_max_ent and not np.isnan(obs_lai_regional_annual_max_ent[region]):
+                ax.axhline(obs_lai_regional_annual_max_ent[region], color='blue', linestyle='-', linewidth=2.5,
+                          alpha=0.8, label=f'MODIS Max {lai_label}: {obs_lai_regional_annual_max_ent[region]:.2f}', zorder=2)
+            if f'{region}_avhrr' in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[f'{region}_avhrr']):
+                ax.axhline(obs_lai_regional_mean_ent[f'{region}_avhrr'], color='orange', linestyle='-.', linewidth=2,
+                          alpha=0.8, label=f'AVHRR Mean {lai_label}: {obs_lai_regional_mean_ent[f"{region}_avhrr"]:.2f}', zorder=2)
+            if region in obs_lai_regional_avhrr_summer and not np.isnan(obs_lai_regional_avhrr_summer[region]):
+                ax.axhline(obs_lai_regional_avhrr_summer[region], color='gold', linestyle='--', linewidth=2,
+                          alpha=0.8, label=f'AVHRR Summer {lai_label}: {obs_lai_regional_avhrr_summer[region]:.2f}', zorder=2)
             if region in obs_lai_regional_annual_max_avhrr_ent and not np.isnan(obs_lai_regional_annual_max_avhrr_ent[region]):
-                ax.axhline(obs_lai_regional_annual_max_avhrr_ent[region], color='darkorange', linestyle=':', linewidth=2.5,
-                          alpha=0.8, label=f'AVHRR Annual Max {lai_label}: {obs_lai_regional_annual_max_avhrr_ent[region]:.2f}', zorder=2)
+                ax.axhline(obs_lai_regional_annual_max_avhrr_ent[region], color='darkorange', linestyle='-', linewidth=2.5,
+                          alpha=0.8, label=f'AVHRR Max {lai_label}: {obs_lai_regional_annual_max_avhrr_ent[region]:.2f}', zorder=2)
         
         # Add AVHRR for non-ENT regions
         if region != 'ENTs' and not np.isnan(obs_lai_avhrr):
@@ -1346,6 +1351,9 @@ for region in REGIONS:
                 else:
                     ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                               alpha=0.8, label=f'MODIS {lai_label}: {obs_lai:.2f}', zorder=2)
+            if region == 'ENTs' and region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+                ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
+                          alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=2)
             if not np.isnan(obs_lai_avhrr):
                 ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2,
                           alpha=0.8, label=f'AVHRR {lai_label}: {obs_lai_avhrr:.2f}', zorder=2)

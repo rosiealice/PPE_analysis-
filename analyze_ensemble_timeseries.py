@@ -66,9 +66,18 @@ C4_GRID_CELLS = None  # Will be populated after identifying top cells
 # Store results for both ensembles by region: {region: {variable: {ensemble_member: mean_value}}}
 results_ppe_v1 = {region: {var: {} for var in VARIABLES} for region in REGIONS.keys()}
 results_ppe_2000_v1 = {region: {var: {} for var in VARIABLES} for region in REGIONS.keys()}
-# Store summer LAI results (months 7, 8, 9)
+# Store summer LAI results (months 6, 7, 8)
 results_ppe_v1_summer_lai = {region: {} for region in REGIONS.keys()}
 results_ppe_2000_v1_summer_lai = {region: {} for region in REGIONS.keys()}
+# Store summer GPP results (months 6, 7, 8)
+results_ppe_v1_summer_gpp = {region: {} for region in REGIONS.keys()}
+results_ppe_2000_v1_summer_gpp = {region: {} for region in REGIONS.keys()}
+# Store maximum LAI results
+results_ppe_v1_max_lai = {region: {} for region in REGIONS.keys()}
+results_ppe_2000_v1_max_lai = {region: {} for region in REGIONS.keys()}
+# Store maximum GPP results
+results_ppe_v1_max_gpp = {region: {} for region in REGIONS.keys()}
+results_ppe_2000_v1_max_gpp = {region: {} for region in REGIONS.keys()}
 # Store parameter values: {parameter_name: {ensemble_member: array_of_pft_values}}
 
 param_values = {param: {} for param in PARAMETERS}
@@ -692,31 +701,67 @@ if 'BDTs' in REGIONS:
     results_ppe_2000_v1['BDTs'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['BDTs'] = {}
     results_ppe_2000_v1_summer_lai['BDTs'] = {}
+    results_ppe_v1_summer_gpp['BDTs'] = {}
+    results_ppe_2000_v1_summer_gpp['BDTs'] = {}
+    results_ppe_v1_max_lai['BDTs'] = {}
+    results_ppe_2000_v1_max_lai['BDTs'] = {}
+    results_ppe_v1_max_gpp['BDTs'] = {}
+    results_ppe_2000_v1_max_gpp['BDTs'] = {}
 if 'BETs' in REGIONS:
     results_ppe_v1['BETs'] = {var: {} for var in VARIABLES}
     results_ppe_2000_v1['BETs'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['BETs'] = {}
     results_ppe_2000_v1_summer_lai['BETs'] = {}
+    results_ppe_v1_summer_gpp['BETs'] = {}
+    results_ppe_2000_v1_summer_gpp['BETs'] = {}
+    results_ppe_v1_max_lai['BETs'] = {}
+    results_ppe_2000_v1_max_lai['BETs'] = {}
+    results_ppe_v1_max_gpp['BETs'] = {}
+    results_ppe_2000_v1_max_gpp['BETs'] = {}
 if 'ENTs' in REGIONS:
     results_ppe_v1['ENTs'] = {var: {} for var in VARIABLES}
     results_ppe_2000_v1['ENTs'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['ENTs'] = {}
     results_ppe_2000_v1_summer_lai['ENTs'] = {}
+    results_ppe_v1_summer_gpp['ENTs'] = {}
+    results_ppe_2000_v1_summer_gpp['ENTs'] = {}
+    results_ppe_v1_max_lai['ENTs'] = {}
+    results_ppe_2000_v1_max_lai['ENTs'] = {}
+    results_ppe_v1_max_gpp['ENTs'] = {}
+    results_ppe_2000_v1_max_gpp['ENTs'] = {}
 if 'AC3G' in REGIONS:
     results_ppe_v1['AC3G'] = {var: {} for var in VARIABLES}
     results_ppe_2000_v1['AC3G'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['AC3G'] = {}
     results_ppe_2000_v1_summer_lai['AC3G'] = {}
+    results_ppe_v1_summer_gpp['AC3G'] = {}
+    results_ppe_2000_v1_summer_gpp['AC3G'] = {}
+    results_ppe_v1_max_lai['AC3G'] = {}
+    results_ppe_2000_v1_max_lai['AC3G'] = {}
+    results_ppe_v1_max_gpp['AC3G'] = {}
+    results_ppe_2000_v1_max_gpp['AC3G'] = {}
 if 'C3G' in REGIONS:
     results_ppe_v1['C3G'] = {var: {} for var in VARIABLES}
     results_ppe_2000_v1['C3G'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['C3G'] = {}
     results_ppe_2000_v1_summer_lai['C3G'] = {}
+    results_ppe_v1_summer_gpp['C3G'] = {}
+    results_ppe_2000_v1_summer_gpp['C3G'] = {}
+    results_ppe_v1_max_lai['C3G'] = {}
+    results_ppe_2000_v1_max_lai['C3G'] = {}
+    results_ppe_v1_max_gpp['C3G'] = {}
+    results_ppe_2000_v1_max_gpp['C3G'] = {}
 if 'C4' in REGIONS:
     results_ppe_v1['C4'] = {var: {} for var in VARIABLES}
     results_ppe_2000_v1['C4'] = {var: {} for var in VARIABLES}
     results_ppe_v1_summer_lai['C4'] = {}
     results_ppe_2000_v1_summer_lai['C4'] = {}
+    results_ppe_v1_summer_gpp['C4'] = {}
+    results_ppe_2000_v1_summer_gpp['C4'] = {}
+    results_ppe_v1_max_lai['C4'] = {}
+    results_ppe_2000_v1_max_lai['C4'] = {}
+    results_ppe_v1_max_gpp['C4'] = {}
+    results_ppe_2000_v1_max_gpp['C4'] = {}
 
 print("\n" + "="*60)
 print("Processing model outputs for PPE_V1...\n")
@@ -769,18 +814,47 @@ for n in ENSEMBLE_MEMBERS:
                         results_ppe_v1[region_name][var][n] = float(var_mean)
                         print(f"    {region_name}: {var_mean:.4f}")
                         
-                        # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                        # Calculate summer LAI (months 6, 7, 8) for FATES_LAI
                         if var == 'FATES_LAI':
                             summer_values = []
+                            max_values = []
                             for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
                                 ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
-                                # Select summer months (7, 8, 9)
-                                ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([7, 8, 9]))
+                                # Select summer months (6, 7, 8)
+                                ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([6, 7, 8]))
                                 summer_val = ds_summer.mean(skipna=True).values
                                 summer_values.append(float(summer_val))
+                                # Calculate average annual maximum (max per year, then average across years)
+                                annual_maxima = ds_point.groupby('time.year').max(skipna=True)
+                                max_val = annual_maxima.mean(skipna=True).values
+                                max_values.append(float(max_val))
                             summer_mean = np.mean(summer_values)
                             results_ppe_v1_summer_lai[region_name][n] = float(summer_mean)
+                            max_mean = np.mean(max_values)
+                            results_ppe_v1_max_lai[region_name][n] = float(max_mean)
                             print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                            print(f"    {region_name} (max LAI): {max_mean:.4f}")
+                        
+                        # Calculate summer GPP (months 6, 7, 8) for FATES_GPP
+                        if var == 'FATES_GPP':
+                            summer_values = []
+                            max_values = []
+                            for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                                ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
+                                # Select summer months (6, 7, 8)
+                                ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([6, 7, 8]))
+                                summer_val = ds_summer.mean(skipna=True).values
+                                summer_values.append(float(summer_val))
+                                # Calculate average annual maximum (max per year, then average across years)
+                                annual_maxima = ds_point.groupby('time.year').max(skipna=True)
+                                max_val = annual_maxima.mean(skipna=True).values
+                                max_values.append(float(max_val))
+                            summer_mean = np.mean(summer_values)
+                            results_ppe_v1_summer_gpp[region_name][n] = float(summer_mean)
+                            max_mean = np.mean(max_values)
+                            results_ppe_v1_max_gpp[region_name][n] = float(max_mean)
+                            print(f"    {region_name} (summer GPP): {summer_mean:.4f}")
+                            print(f"    {region_name} (max GPP): {max_mean:.4f}")
                     else:
                         # Subset by lat and lon
                         ds_subset = ds[var].where(
@@ -795,13 +869,31 @@ for n in ENSEMBLE_MEMBERS:
                         results_ppe_v1[region_name][var][n] = float(var_mean)
                         print(f"    {region_name}: {var_mean:.4f}")
                         
-                        # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                        # Calculate summer LAI (months 6, 7, 8) for FATES_LAI
                         if var == 'FATES_LAI':
-                            # Select summer months (7, 8, 9)
-                            ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([7, 8, 9]))
+                            # Select summer months (6, 7, 8)
+                            ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([6, 7, 8]))
                             summer_mean = ds_summer.mean(skipna=True).values
                             results_ppe_v1_summer_lai[region_name][n] = float(summer_mean)
+                            # Calculate average annual maximum (max per year, then average across years)
+                            annual_maxima = ds_subset.groupby('time.year').max(skipna=True)
+                            max_val = annual_maxima.mean(skipna=True).values
+                            results_ppe_v1_max_lai[region_name][n] = float(max_val)
                             print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                            print(f"    {region_name} (max LAI): {max_val:.4f}")
+                        
+                        # Calculate summer GPP (months 6, 7, 8) for FATES_GPP
+                        if var == 'FATES_GPP':
+                            # Select summer months (6, 7, 8)
+                            ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([6, 7, 8]))
+                            summer_mean = ds_summer.mean(skipna=True).values
+                            results_ppe_v1_summer_gpp[region_name][n] = float(summer_mean)
+                            # Calculate average annual maximum (max per year, then average across years)
+                            annual_maxima = ds_subset.groupby('time.year').max(skipna=True)
+                            max_val = annual_maxima.mean(skipna=True).values
+                            results_ppe_v1_max_gpp[region_name][n] = float(max_val)
+                            print(f"    {region_name} (summer GPP): {summer_mean:.4f}")
+                            print(f"    {region_name} (max GPP): {max_val:.4f}")
             else:
                 print(f"  WARNING: Variable {var} not found in dataset")
                 for region_name in REGIONS.keys():
@@ -872,18 +964,47 @@ if ens_n != 2:
                             results_ppe_2000_v1[region_name][var][n] = float(var_mean)
                             print(f"    {region_name}: {var_mean:.4f}")
                             
-                            # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                            # Calculate summer LAI (months 6, 7, 8) for FATES_LAI
                             if var == 'FATES_LAI':
                                 summer_values = []
+                                max_values = []
                                 for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
                                     ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
-                                    # Select summer months (7, 8, 9)
-                                    ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([7, 8, 9]))
+                                    # Select summer months (6, 7, 8)
+                                    ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([6, 7, 8]))
                                     summer_val = ds_summer.mean(skipna=True).values
                                     summer_values.append(float(summer_val))
+                                    # Calculate average annual maximum (max per year, then average across years)
+                                    annual_maxima = ds_point.groupby('time.year').max(skipna=True)
+                                    max_val = annual_maxima.mean(skipna=True).values
+                                    max_values.append(float(max_val))
                                 summer_mean = np.mean(summer_values)
                                 results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
+                                max_mean = np.mean(max_values)
+                                results_ppe_2000_v1_max_lai[region_name][n] = float(max_mean)
                                 print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                                print(f"    {region_name} (max LAI): {max_mean:.4f}")
+                            
+                            # Calculate summer GPP (months 6, 7, 8) for FATES_GPP
+                            if var == 'FATES_GPP':
+                                summer_values = []
+                                max_values = []
+                                for lat, lon in zip(grid_cells['lats'], grid_cells['lons']):
+                                    ds_point = ds[var].sel(lat=lat, lon=lon, method='nearest')
+                                    # Select summer months (6, 7, 8)
+                                    ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([6, 7, 8]))
+                                    summer_val = ds_summer.mean(skipna=True).values
+                                    summer_values.append(float(summer_val))
+                                    # Calculate average annual maximum (max per year, then average across years)
+                                    annual_maxima = ds_point.groupby('time.year').max(skipna=True)
+                                    max_val = annual_maxima.mean(skipna=True).values
+                                    max_values.append(float(max_val))
+                                summer_mean = np.mean(summer_values)
+                                results_ppe_2000_v1_summer_gpp[region_name][n] = float(summer_mean)
+                                max_mean = np.mean(max_values)
+                                results_ppe_2000_v1_max_gpp[region_name][n] = float(max_mean)
+                                print(f"    {region_name} (summer GPP): {summer_mean:.4f}")
+                                print(f"    {region_name} (max GPP): {max_mean:.4f}")
                         else:
                             # Subset by lat and lon
                             ds_subset = ds[var].where(
@@ -898,13 +1019,31 @@ if ens_n != 2:
                             results_ppe_2000_v1[region_name][var][n] = float(var_mean)
                             print(f"    {region_name}: {var_mean:.4f}")
                             
-                            # Calculate summer LAI (months 7, 8, 9) for FATES_LAI
+                            # Calculate summer LAI (months 6, 7, 8) for FATES_LAI
                             if var == 'FATES_LAI':
-                                # Select summer months (7, 8, 9)
-                                ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([7, 8, 9]))
+                                # Select summer months (6, 7, 8)
+                                ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([6, 7, 8]))
                                 summer_mean = ds_summer.mean(skipna=True).values
                                 results_ppe_2000_v1_summer_lai[region_name][n] = float(summer_mean)
+                                # Calculate average annual maximum (max per year, then average across years)
+                                annual_maxima = ds_subset.groupby('time.year').max(skipna=True)
+                                max_val = annual_maxima.mean(skipna=True).values
+                                results_ppe_2000_v1_max_lai[region_name][n] = float(max_val)
                                 print(f"    {region_name} (summer LAI): {summer_mean:.4f}")
+                                print(f"    {region_name} (max LAI): {max_val:.4f}")
+                            
+                            # Calculate summer GPP (months 6, 7, 8) for FATES_GPP
+                            if var == 'FATES_GPP':
+                                # Select summer months (6, 7, 8)
+                                ds_summer = ds_subset.sel(time=ds_subset.time.dt.month.isin([6, 7, 8]))
+                                summer_mean = ds_summer.mean(skipna=True).values
+                                results_ppe_2000_v1_summer_gpp[region_name][n] = float(summer_mean)
+                                # Calculate average annual maximum (max per year, then average across years)
+                                annual_maxima = ds_subset.groupby('time.year').max(skipna=True)
+                                max_val = annual_maxima.mean(skipna=True).values
+                                results_ppe_2000_v1_max_gpp[region_name][n] = float(max_val)
+                                print(f"    {region_name} (summer GPP): {summer_mean:.4f}")
+                                print(f"    {region_name} (max GPP): {max_val:.4f}")
                 else:
                     print(f"  WARNING: Variable {var} not found in dataset")
                     for region_name in REGIONS.keys():
@@ -986,6 +1125,21 @@ for region_name in REGIONS.keys():
     if ens_n != 2:
         csv_data['fates_lai_summer_PPE_2000_V1'] = [results_ppe_2000_v1_summer_lai[region_name].get(n, np.nan) for n in ensemble_nums]
     
+    # Add summer GPP values
+    csv_data['fates_gpp_summer_PPE_V1'] = [results_ppe_v1_summer_gpp[region_name].get(n, np.nan) for n in ensemble_nums]
+    if ens_n != 2:
+        csv_data['fates_gpp_summer_PPE_2000_V1'] = [results_ppe_2000_v1_summer_gpp[region_name].get(n, np.nan) for n in ensemble_nums]
+    
+    # Add maximum LAI values
+    csv_data['fates_lai_max_PPE_V1'] = [results_ppe_v1_max_lai[region_name].get(n, np.nan) for n in ensemble_nums]
+    if ens_n != 2:
+        csv_data['fates_lai_max_PPE_2000_V1'] = [results_ppe_2000_v1_max_lai[region_name].get(n, np.nan) for n in ensemble_nums]
+    
+    # Add maximum GPP values
+    csv_data['fates_gpp_max_PPE_V1'] = [results_ppe_v1_max_gpp[region_name].get(n, np.nan) for n in ensemble_nums]
+    if ens_n != 2:
+        csv_data['fates_gpp_max_PPE_2000_V1'] = [results_ppe_2000_v1_max_gpp[region_name].get(n, np.nan) for n in ensemble_nums]
+    
     # Add summer LAI ratio
     if ens_n != 2:
         summer_lai_ratios = []
@@ -997,6 +1151,17 @@ for region_name in REGIONS.keys():
             else:
                 summer_lai_ratios.append(np.nan)
         csv_data['fates_lai_summer_ratio'] = summer_lai_ratios
+        
+        # Add summer GPP ratio
+        summer_gpp_ratios = []
+        for n in ensemble_nums:
+            v1 = results_ppe_v1_summer_gpp[region_name].get(n, np.nan)
+            v2 = results_ppe_2000_v1_summer_gpp[region_name].get(n, np.nan)
+            if not np.isnan(v1) and not np.isnan(v2) and v1 != 0:
+                summer_gpp_ratios.append(v2 / v1)
+            else:
+                summer_gpp_ratios.append(np.nan)
+        csv_data['fates_gpp_summer_ratio'] = summer_gpp_ratios
     
     # Add ratios
     if ens_n != 2:
