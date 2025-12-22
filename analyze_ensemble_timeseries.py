@@ -14,7 +14,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 # Configuration
-ens_n = 2
+ens_n = 3
 
 BASE_PATH = "/datalake/NS9560K/rosief"
 OUTPUT_ROOT = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/"
@@ -40,6 +40,17 @@ elif(ens_n==2):
     output_dirname='ppe_2000_v1_c4g'
     YEARS = range(39, 40)  # Years 09 to 10
     casename = 'noresm_beta07_crujra_ppe_2000_v2_'
+
+elif(ens_n==3):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_ENT_scripts/PPE_param_files/lhs_params"
+     paramfilename='params_lhs_20251222_1556_'
+     ensdir='ens_v3_ent'
+     PARAMETERS = ['fates_stoich_nitr', 'fates_leaf_vcmax25top',
+                  'fates_allom_d2bl1', 'fates_leaf_slatop','fates_grperc']
+     ENSEMBLE_MEMBERS = range(1, 16)  # n01 to n13
+     output_dirname='ppe_2000_v3_ent'
+     YEARS = range(29,30)  # Years 09 to 10
+     casename = 'noresm_beta07_crujra_ppe_2000_v3_'
 
 outputdir = OUTPUT_ROOT+output_dirname             
 VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC']
@@ -910,13 +921,13 @@ for n in ENSEMBLE_MEMBERS:
                 results_ppe_v1[region_name][var][n] = np.nan
 
 print("\n" + "="*60)
-if ens_n != 2:
+if ens_n < 2:
     print("Processing model outputs for PPE_2000_V1...\n")
 else:
     print("Skipping PPE_2000_V1 processing (ens_n==2)...\n")
 
 # Loop through each ensemble member for second ensemble
-if ens_n != 2:
+if ens_n < 2:
     for n in ENSEMBLE_MEMBERS:
         ensemble_id = f"n{n:02d}"
         dir_path = f"{BASE_PATH}/noresm_beta07_crujra_ppe_2000_v1_{ensemble_id}/lnd/hist/"

@@ -1,4 +1,4 @@
- 
+
 #!/usr/bin/env python
 """
 Script to analyze the CSV outputs from ensemble analysis
@@ -8,6 +8,7 @@ Reads the ensemble data and performs additional analysis
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from scipy.stats import qmc
 from sklearn.linear_model import LinearRegression
@@ -17,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 
 # EMULATOR CONFIGURATION
 # Choose emulator type: 'linear' or 'gp' (Gaussian Process)
-EMULATOR_TYPE = 'linear'  # Change to 'gp' for Gaussian Process emulator
+EMULATOR_TYPE = 'gp'  # Change to 'gp' for Gaussian Process emulator
 import xarray as xr
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -33,18 +34,25 @@ def get_emulator():
         return LinearRegression()
 
 # Configuration
+
 DATA_DIR = Path("/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/")
 
-ens_n = 2  # Set ensemble number (1 or 2)
+ens_n = 3  # Set ensemble number (1, 2, or 3)
 if(ens_n==1):
     DATA_DIR = DATA_DIR / "ppe_2000_v1_soilc/"
-    YEAR_RANGE = "years29-29"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
+    YEAR_RANGE = "years09-09"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
     params = ['fates_allom_l2fr', 'fates_maintresp_leaf_ryan1991_baserate', 'fates_allom_d2bl1', 'fates_leaf_slatop']
 
 elif(ens_n==2):
     DATA_DIR = DATA_DIR / "ppe_2000_v1_c4g/"
     YEAR_RANGE = "years39-39"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
     params = ['fates_leaf_vcmax25top', 'fates_leaf_slatop', 'fates_turnover_leaf_canopy', 'fates_landuse_grazing_rate', 'fates_fire_cg_strikes']
+
+elif(ens_n==3):
+    DATA_DIR = DATA_DIR / "ppe_2000_v3_ent/"
+    YEAR_RANGE = "years29-29"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
+    params = ['fates_stoich_nitr', 'fates_leaf_vcmax25top',
+                  'fates_allom_d2bl1', 'fates_leaf_slatop','fates_grperc']
 
 
 
@@ -281,7 +289,7 @@ def get_lai_column(region, df=None):
     Returns the appropriate LAI column for a given region.
     For ENTs (PFT 2), use average annual maximum LAI.
     For other regions, use regular LAI.
-    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available.
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available or empty.
     
     Args:
         region: Region name (e.g., 'ENTs', 'BDTs', 'north_65')
@@ -295,7 +303,8 @@ def get_lai_column(region, df=None):
         col_2000 = 'fates_lai_max_PPE_2000_V1'
         col_v1 = 'fates_lai_max_PPE_V1'
         if df is not None:
-            if col_2000 in df.columns:
+            # Check if 2000 column exists and has non-NaN data
+            if col_2000 in df.columns and df[col_2000].notna().any():
                 return col_2000
             elif col_v1 in df.columns:
                 return col_v1
@@ -306,7 +315,8 @@ def get_lai_column(region, df=None):
         col_2000 = 'FATES_LAI_PPE_2000_V1'
         col_v1 = 'FATES_LAI_PPE_V1'
         if df is not None:
-            if col_2000 in df.columns:
+            # Check if 2000 column exists and has non-NaN data
+            if col_2000 in df.columns and df[col_2000].notna().any():
                 return col_2000
             elif col_v1 in df.columns:
                 return col_v1
@@ -335,7 +345,7 @@ def get_gpp_column(region, df=None):
     Returns the appropriate GPP column for a given region.
     For ENTs (PFT 2), use average annual maximum GPP.
     For other regions, use regular GPP.
-    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available.
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available or empty.
     
     Args:
         region: Region name (e.g., 'ENTs', 'BDTs', 'north_65')
@@ -349,7 +359,8 @@ def get_gpp_column(region, df=None):
         col_2000 = 'fates_gpp_max_PPE_2000_V1'
         col_v1 = 'fates_gpp_max_PPE_V1'
         if df is not None:
-            if col_2000 in df.columns:
+            # Check if 2000 column exists and has non-NaN data
+            if col_2000 in df.columns and df[col_2000].notna().any():
                 return col_2000
             elif col_v1 in df.columns:
                 return col_v1
@@ -361,7 +372,8 @@ def get_gpp_column(region, df=None):
         col_2000 = 'FATES_GPP_PPE_2000_V1'
         col_v1 = 'FATES_GPP_PPE_V1'
         if df is not None:
-            if col_2000 in df.columns:
+            # Check if 2000 column exists and has non-NaN data
+            if col_2000 in df.columns and df[col_2000].notna().any():
                 return col_2000
             elif col_v1 in df.columns:
                 return col_v1
@@ -384,6 +396,58 @@ def get_gpp_label(region):
         return 'Max GPP'
     else:
         return 'GPP'
+
+# Helper function to get VEGC column for a region
+def get_vegc_column(region, df=None):
+    """
+    Returns the appropriate VEGC column for a given region.
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available or empty.
+    
+    Args:
+        region: Region name (e.g., 'ENTs', 'BDTs', 'north_65')
+        df: Optional dataframe to check for column availability
+    
+    Returns:
+        Column name string or None
+    """
+    col_2000 = 'FATES_VEGC_PPE_2000_V1'
+    col_v1 = 'FATES_VEGC_PPE_V1'
+    
+    if df is not None:
+        # Check if 2000 column exists and has non-NaN data
+        if col_2000 in df.columns and df[col_2000].notna().any():
+            return col_2000
+        elif col_v1 in df.columns and df[col_v1].notna().any():
+            return col_v1
+        else:
+            return None  # Neither column exists or has data
+    return col_2000  # Default when df not provided
+
+# Helper function to get NPP column for a region
+def get_npp_column(region, df=None):
+    """
+    Returns the appropriate NPP column for a given region.
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available or empty.
+    
+    Args:
+        region: Region name (e.g., 'ENTs', 'BDTs', 'north_65')
+        df: Optional dataframe to check for column availability
+    
+    Returns:
+        Column name string or None
+    """
+    col_2000 = 'FATES_NPP_PPE_2000_V1'
+    col_v1 = 'FATES_NPP_PPE_V1'
+    
+    if df is not None:
+        # Check if 2000 column exists and has non-NaN data
+        if col_2000 in df.columns and df[col_2000].notna().any():
+            return col_2000
+        elif col_v1 in df.columns and df[col_v1].notna().any():
+            return col_v1
+        else:
+            return None  # Neither column exists or has data
+    return col_2000  # Default when df not provided
 
 # Read selected members (high NPP, low LAI)
 selected_data = {}
@@ -408,6 +472,9 @@ print("\n" + "="*60)
 print("Creating GPP(2000) vs parameter plots with FLUXCOM observations and emulator...")
 print("="*60)
 
+# Initialize list to store constrained parameter choices
+parameter_choices = []
+
 for region in REGIONS:
     if region not in data:
         continue
@@ -428,20 +495,37 @@ for region in REGIONS:
     print(f"\nCreating GPP plots for {region.replace('_', ' ').title()}")
     
     # Debug: Check observational data
-    if region in obs_gpp_regional:
-        print(f"  FLUXCOM GPP for {region}: {obs_gpp_regional[region]:.4f} gC m-2 day-1")
-    if region in obs_gpp_regional_wecann:
-        print(f"  WECANN GPP for {region}: {obs_gpp_regional_wecann[region]:.4f} gC m-2 day-1")
+    if region == 'ENTs':
+        if region in obs_gpp_regional_fluxcom_annual_max:
+            print(f"  FLUXCOM Annual Max GPP for {region}: {obs_gpp_regional_fluxcom_annual_max[region]:.4f} gC m-2 day-1")
+        if region in obs_gpp_regional_wecann_annual_max:
+            print(f"  WECANN Annual Max GPP for {region}: {obs_gpp_regional_wecann_annual_max[region]:.4f} gC m-2 day-1")
+    else:
+        if region in obs_gpp_regional:
+            print(f"  FLUXCOM GPP for {region}: {obs_gpp_regional[region]:.4f} gC m-2 day-1")
+        if region in obs_gpp_regional_wecann:
+            print(f"  WECANN GPP for {region}: {obs_gpp_regional_wecann[region]:.4f} gC m-2 day-1")
+    
+    # Check if parameters have data
+    params_with_data = [p for p in params if p in df.columns and df[p].notna().any()]
+    
+    if len(params_with_data) == 0:
+        print(f"  WARNING: No parameter data available in CSV. Cannot create emulator or parameter plots.")
+        print(f"  Hint: Run analyze_ensemble_timeseries.py first to generate CSVs with parameter values.")
+        continue
     
     # Clean data - remove rows with NaN in parameters or GPP
-    df_clean = df.dropna(subset=params + [gpp_col])
+    df_clean = df.dropna(subset=params_with_data + [gpp_col])
     
     if len(df_clean) < 3:
         print(f"  WARNING: Not enough clean data points ({len(df_clean)}) for emulator. Skipping.")
         continue
     
+    # Use only params with data for the analysis
+    params_to_use = params_with_data
+    
     # Prepare training data for emulator
-    X = df_clean[params].values
+    X = df_clean[params_to_use].values
     y = df_clean[gpp_col].values
     
     # Get LAI data for coloring
@@ -464,6 +548,28 @@ for region in REGIONS:
         lr_lai.fit(X, y_lai)
         print(f"  Training LAI emulator ({EMULATOR_TYPE.upper()})...")
     
+    # Train VEGC emulator if VEGC data is available
+    vegc_col = get_vegc_column(region, df_clean)
+    lr_vegc = None
+    if vegc_col and vegc_col in df_clean.columns:
+        y_vegc = df_clean[vegc_col].values
+        lr_vegc = get_emulator()
+        lr_vegc.fit(X, y_vegc)
+        print(f"  Training VEGC emulator ({EMULATOR_TYPE.upper()})...")
+        vegc_r2 = lr_vegc.score(X, y_vegc)
+        print(f"  VEGC Emulator R²: {vegc_r2:.4f}")
+    
+    # Train NPP emulator if NPP data is available
+    npp_col = get_npp_column(region, df_clean)
+    lr_npp = None
+    if npp_col and npp_col in df_clean.columns:
+        y_npp = df_clean[npp_col].values
+        lr_npp = get_emulator()
+        lr_npp.fit(X, y_npp)
+        print(f"  Training NPP emulator ({EMULATOR_TYPE.upper()})...")
+        npp_r2 = lr_npp.score(X, y_npp)
+        print(f"  NPP Emulator R²: {npp_r2:.4f}")
+    
     # Evaluate emulator skill
     y_pred_train = lr.predict(X)
     r2 = 1 - np.sum((y - y_pred_train)**2) / np.sum((y - y.mean())**2)
@@ -472,7 +578,7 @@ for region in REGIONS:
     print(f"  GPP Emulator RMSE: {rmse:.4f}")
     
     # Generate Latin Hypercube samples for emulator predictions
-    n_samples = 2000
+    n_samples = 3000
     sampler = qmc.LatinHypercube(d=len(params))
     sample = sampler.random(n=n_samples)
     
@@ -492,14 +598,34 @@ for region in REGIONS:
     else:
         y_lai_lhs_pred = y_lhs_pred  # Fallback to GPP
     
+    # Predict VEGC for LHS samples if VEGC emulator is available
+    y_vegc_lhs_pred = None
+    if lr_vegc is not None:
+        y_vegc_lhs_pred = lr_vegc.predict(lhs_samples)
+        print(f"  VEGC range: {y_vegc.min():.4f} to {y_vegc.max():.4f}")
+        print(f"  LHS predicted VEGC range: {y_vegc_lhs_pred.min():.4f} to {y_vegc_lhs_pred.max():.4f}")
+    
+    # Predict NPP for LHS samples if NPP emulator is available
+    y_npp_lhs_pred = None
+    if lr_npp is not None:
+        y_npp_lhs_pred = lr_npp.predict(lhs_samples)
+        print(f"  NPP range: {y_npp.min():.4f} to {y_npp.max():.4f}")
+        print(f"  LHS predicted NPP range: {y_npp_lhs_pred.min():.4f} to {y_npp_lhs_pred.max():.4f}")
+    
     print(f"  GPP range: {y.min():.4f} to {y.max():.4f}")
     print(f"  LHS predicted GPP range: {y_lhs_pred.min():.4f} to {y_lhs_pred.max():.4f}")
     
     # Debug: Print observation values for this region
-    if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
-        print(f"  Will plot FLUXCOM GPP horizontal line at: {obs_gpp_regional[region]:.4f}")
-    if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
-        print(f"  Will plot WECANN GPP horizontal line at: {obs_gpp_regional_wecann[region]:.4f}")
+    if region == 'ENTs':
+        if region in obs_gpp_regional_fluxcom_annual_max and not np.isnan(obs_gpp_regional_fluxcom_annual_max[region]):
+            print(f"  Will plot FLUXCOM Annual Max GPP horizontal line at: {obs_gpp_regional_fluxcom_annual_max[region]:.4f}")
+        if region in obs_gpp_regional_wecann_annual_max and not np.isnan(obs_gpp_regional_wecann_annual_max[region]):
+            print(f"  Will plot WECANN Annual Max GPP horizontal line at: {obs_gpp_regional_wecann_annual_max[region]:.4f}")
+    else:
+        if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
+            print(f"  Will plot FLUXCOM GPP horizontal line at: {obs_gpp_regional[region]:.4f}")
+        if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
+            print(f"  Will plot WECANN GPP horizontal line at: {obs_gpp_regional_wecann[region]:.4f}")
     
     # Identify emulator samples within LAI boundaries
     lai_within_bounds_mask = np.zeros(len(y_lai_lhs_pred), dtype=bool)
@@ -535,8 +661,13 @@ for region in REGIONS:
     gpp_lai_within_bounds_mask = np.zeros(len(y_lai_lhs_pred), dtype=bool)
     gpp_only_within_bounds_mask = np.zeros(len(y_lai_lhs_pred), dtype=bool)
     
-    obs_gpp_fluxcom = obs_gpp_regional.get(region, np.nan)
-    obs_gpp_wecann_val = obs_gpp_regional_wecann.get(region, np.nan)
+    # Get GPP observations based on region type
+    if region == 'ENTs':
+        obs_gpp_fluxcom = obs_gpp_regional_fluxcom_annual_max.get(region, np.nan)
+        obs_gpp_wecann_val = obs_gpp_regional_wecann_annual_max.get(region, np.nan)
+    else:
+        obs_gpp_fluxcom = obs_gpp_regional.get(region, np.nan)
+        obs_gpp_wecann_val = obs_gpp_regional_wecann.get(region, np.nan)
     
     if not np.isnan(obs_gpp_fluxcom) and not np.isnan(obs_gpp_wecann_val):
         # Define GPP boundaries as min and max of the two observations
@@ -611,14 +742,38 @@ for region in REGIONS:
                    label=f'Model GPP{gpp_time_label}')
         
         # Add observed GPP as horizontal line
-        if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
-            print(f"  Adding FLUXCOM horizontal line at y={obs_gpp_regional[region]:.4f}")
-            ax.axhline(obs_gpp_regional[region], color='darkred', linestyle='--', 
-                      linewidth=2, alpha=0.8, zorder=3, label=f'FLUXCOM GPP: {obs_gpp_regional[region]:.2f}')
-        if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
-            print(f"  Adding WECANN horizontal line at y={obs_gpp_regional_wecann[region]:.4f}")
-            ax.axhline(obs_gpp_regional_wecann[region], color='coral', linestyle=':', 
-                      linewidth=2, alpha=0.8, zorder=3, label=f'WECANN GPP: {obs_gpp_regional_wecann[region]:.2f}')
+        if region == 'ENTs':
+            # Add grey shading between the two observational estimates
+            if (region in obs_gpp_regional_fluxcom_annual_max and not np.isnan(obs_gpp_regional_fluxcom_annual_max[region]) and
+                region in obs_gpp_regional_wecann_annual_max and not np.isnan(obs_gpp_regional_wecann_annual_max[region])):
+                gpp_min = min(obs_gpp_regional_fluxcom_annual_max[region], obs_gpp_regional_wecann_annual_max[region])
+                gpp_max = max(obs_gpp_regional_fluxcom_annual_max[region], obs_gpp_regional_wecann_annual_max[region])
+                ax.axhspan(gpp_min, gpp_max, color='grey', alpha=0.2, zorder=0.5)
+            
+            if region in obs_gpp_regional_fluxcom_annual_max and not np.isnan(obs_gpp_regional_fluxcom_annual_max[region]):
+                print(f"  Adding FLUXCOM horizontal line at y={obs_gpp_regional_fluxcom_annual_max[region]:.4f}")
+                ax.axhline(obs_gpp_regional_fluxcom_annual_max[region], color='darkred', linestyle='--', 
+                          linewidth=2, alpha=0.8, zorder=3, label=f'FLUXCOM Annual Max GPP: {obs_gpp_regional_fluxcom_annual_max[region]:.2f}')
+            if region in obs_gpp_regional_wecann_annual_max and not np.isnan(obs_gpp_regional_wecann_annual_max[region]):
+                print(f"  Adding WECANN horizontal line at y={obs_gpp_regional_wecann_annual_max[region]:.4f}")
+                ax.axhline(obs_gpp_regional_wecann_annual_max[region], color='coral', linestyle=':', 
+                          linewidth=2, alpha=0.8, zorder=3, label=f'WECANN Annual Max GPP: {obs_gpp_regional_wecann_annual_max[region]:.2f}')
+        else:
+            # Add grey shading between the two observational estimates
+            if (region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]) and
+                region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region])):
+                gpp_min = min(obs_gpp_regional[region], obs_gpp_regional_wecann[region])
+                gpp_max = max(obs_gpp_regional[region], obs_gpp_regional_wecann[region])
+                ax.axhspan(gpp_min, gpp_max, color='grey', alpha=0.2, zorder=0.5)
+            
+            if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
+                print(f"  Adding FLUXCOM horizontal line at y={obs_gpp_regional[region]:.4f}")
+                ax.axhline(obs_gpp_regional[region], color='darkred', linestyle='--', 
+                          linewidth=2, alpha=0.8, zorder=3, label=f'FLUXCOM GPP: {obs_gpp_regional[region]:.2f}')
+            if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
+                print(f"  Adding WECANN horizontal line at y={obs_gpp_regional_wecann[region]:.4f}")
+                ax.axhline(obs_gpp_regional_wecann[region], color='coral', linestyle=':', 
+                          linewidth=2, alpha=0.8, zorder=3, label=f'WECANN GPP: {obs_gpp_regional_wecann[region]:.2f}')
         
         # Add ensemble member labels
         for _, row_data in df.iterrows():
@@ -657,7 +812,7 @@ for region in REGIONS:
         cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
     
     plt.tight_layout()
-    output_file = OUTPUT_DIR_GPP / f"gpp_vs_parameters_{region}.png"
+    output_file = OUTPUT_DIR_GPP / f"gpp_vs_parameters_{region}_{EMULATOR_TYPE}.png"
     fig.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"  Saved plot: {output_file}")
     plt.close(fig)
@@ -701,7 +856,21 @@ for region in REGIONS:
             # Calculate and plot mean of black points
             mean_slatop = np.mean(lhs_samples[gpp_lai_within_bounds_mask, slatop_idx])
             mean_vcmax = np.mean(lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx])
+            std_slatop = np.std(lhs_samples[gpp_lai_within_bounds_mask, slatop_idx])
+            std_vcmax = np.std(lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx])
             print(f"  Mean of constrained points: slatop={mean_slatop:.4f}, vcmax25top={mean_vcmax:.4f}")
+            print(f"  Std of constrained points: slatop={std_slatop:.4f}, vcmax25top={std_vcmax:.4f}")
+            
+            # Store parameter choices for CSV output
+            parameter_choices.append({
+                'PFT': region,
+                'vcmax25top': mean_vcmax,
+                'slatop': mean_slatop,
+                'vcmax25top_std': std_vcmax,
+                'slatop_std': std_slatop,
+                'n_constrained_points': np.sum(gpp_lai_within_bounds_mask)
+            })
+            
             ax_space.scatter(mean_slatop, mean_vcmax,
                            s=400, alpha=1.0, c='black', edgecolors='gold', linewidth=3,
                            marker='*', label=f'Mean of constrained points', zorder=5)
@@ -738,12 +907,416 @@ for region in REGIONS:
         ax_space.legend(loc='best', fontsize=10, framealpha=0.9)
         ax_space.grid(True, alpha=0.3)
         
-        output_file_param = OUTPUT_DIR_GPP / f"parameter_space_slatop_vcmax_{region}.png"
+        output_file_param = OUTPUT_DIR_GPP / f"parameter_space_slatop_vcmax_{region}_{EMULATOR_TYPE}.png"
         fig_param_space.savefig(output_file_param, dpi=300, bbox_inches='tight')
         print(f"  Saved parameter space plot: {output_file_param}")
         plt.close(fig_param_space)
     else:
         print(f"  Skipping parameter space plot (requires both slatop and vcmax25top)")
+    
+    # Create 3D parameter space visualization (slatop vs vcmax25top vs stoich_nitr)
+    if 'fates_leaf_slatop' in params and 'fates_leaf_vcmax25top' in params and 'fates_stoich_nitr' in params:
+        print(f"  Creating 3D parameter space visualization (slatop vs vcmax25top vs stoich_nitr)...")
+        
+        slatop_idx = params.index('fates_leaf_slatop')
+        vcmax_idx = params.index('fates_leaf_vcmax25top')
+        stoich_idx = params.index('fates_stoich_nitr')
+        
+        fig_3d = plt.figure(figsize=(12, 10))
+        ax_3d = fig_3d.add_subplot(111, projection='3d')
+        
+        # Plot all emulator samples (light blue)
+        ax_3d.scatter(lhs_samples[:, slatop_idx], lhs_samples[:, vcmax_idx], lhs_samples[:, stoich_idx],
+                     s=10, alpha=0.2, c='lightblue', edgecolors='none', 
+                     label='All emulator space', zorder=1)
+        
+        # Plot samples within GPP bounds only (green)
+        if np.any(gpp_only_within_bounds_mask):
+            ax_3d.scatter(lhs_samples[gpp_only_within_bounds_mask, slatop_idx], 
+                         lhs_samples[gpp_only_within_bounds_mask, vcmax_idx],
+                         lhs_samples[gpp_only_within_bounds_mask, stoich_idx],
+                         s=20, alpha=0.6, c='limegreen', edgecolors='none',
+                         label=f'Within GPP bounds ({np.sum(gpp_only_within_bounds_mask)} samples)', zorder=2)
+        
+        # Plot samples within LAI bounds only (pink)
+        lai_only_mask = lai_within_bounds_mask & ~gpp_lai_within_bounds_mask
+        if np.any(lai_only_mask):
+            ax_3d.scatter(lhs_samples[lai_only_mask, slatop_idx], 
+                         lhs_samples[lai_only_mask, vcmax_idx],
+                         lhs_samples[lai_only_mask, stoich_idx],
+                         s=20, alpha=0.6, c='hotpink', edgecolors='none',
+                         label=f'Within LAI bounds ({np.sum(lai_only_mask)} samples)', zorder=2)
+        
+        # Plot samples within BOTH LAI and GPP bounds (black)
+        if np.any(gpp_lai_within_bounds_mask):
+            ax_3d.scatter(lhs_samples[gpp_lai_within_bounds_mask, slatop_idx], 
+                         lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx],
+                         lhs_samples[gpp_lai_within_bounds_mask, stoich_idx],
+                         s=30, alpha=0.9, c='black', edgecolors='yellow', linewidth=0.5,
+                         label=f'Within LAI & GPP bounds ({np.sum(gpp_lai_within_bounds_mask)} samples)', zorder=3)
+            
+            # Calculate and plot mean of black points
+            mean_slatop = np.mean(lhs_samples[gpp_lai_within_bounds_mask, slatop_idx])
+            mean_vcmax = np.mean(lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx])
+            mean_stoich = np.mean(lhs_samples[gpp_lai_within_bounds_mask, stoich_idx])
+            
+            ax_3d.scatter(mean_slatop, mean_vcmax, mean_stoich,
+                         s=500, alpha=1.0, c='black', edgecolors='gold', linewidth=3,
+                         marker='*', label=f'Mean of constrained points', zorder=5)
+            
+            # Add text annotation with parameter values (positioned above points)
+            z_range = np.max(lhs_samples[gpp_lai_within_bounds_mask, stoich_idx]) - np.min(lhs_samples[gpp_lai_within_bounds_mask, stoich_idx])
+            text_z_offset = z_range * 0.15  # Position 15% above the data range
+            ax_3d.text(mean_slatop, mean_vcmax, mean_stoich + text_z_offset,
+                      f'  slatop={mean_slatop:.3f}\n  vcmax={mean_vcmax:.2f}\n  stoich_nitr={mean_stoich:.3f}',
+                      fontsize=9, fontweight='bold',
+                      bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', 
+                               edgecolor='black', alpha=0.8), zorder=10)
+        
+        # Plot actual ensemble members
+        if 'fates_stoich_nitr' in df_clean.columns:
+            ax_3d.scatter(df_clean['fates_leaf_slatop'], df_clean['fates_leaf_vcmax25top'],
+                         df_clean['fates_stoich_nitr'],
+                         s=150, alpha=0.9, c='red', edgecolors='darkred', linewidth=2,
+                         marker='*', label='Ensemble members', zorder=4)
+            
+            # Add ensemble labels
+            for _, row in df_clean.iterrows():
+                ax_3d.text(row['fates_leaf_slatop'], row['fates_leaf_vcmax25top'], 
+                          row['fates_stoich_nitr'],
+                          f"n{int(row['ensemble_member']):02d}",
+                          fontsize=8, ha='center', va='bottom', fontweight='bold',
+                          bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                   edgecolor='darkred', alpha=0.8))
+        
+        ax_3d.set_xlabel('fates_leaf_slatop', fontsize=11, fontweight='bold')
+        ax_3d.set_ylabel('fates_leaf_vcmax25top', fontsize=11, fontweight='bold')
+        ax_3d.set_zlabel('fates_stoich_nitr', fontsize=11, fontweight='bold')
+        ax_3d.set_title(f'3D Parameter Space - {region.replace("_", " ").title()}\\n' +
+                       f'Constrained by LAI and GPP observations',
+                       fontsize=14, fontweight='bold', pad=20)
+        ax_3d.legend(loc='upper left', fontsize=9, framealpha=0.9)
+        ax_3d.grid(True, alpha=0.3)
+        
+        # Set viewing angle for better visibility
+        ax_3d.view_init(elev=20, azim=45)
+        
+        output_file_3d = OUTPUT_DIR_GPP / f"parameter_space_3d_{region}_{EMULATOR_TYPE}.png"
+        fig_3d.savefig(output_file_3d, dpi=300, bbox_inches='tight')
+        print(f"  Saved 3D parameter space plot: {output_file_3d}")
+        plt.close(fig_3d)
+        
+        # Create 3D plot of constrained points colored by d2bl1
+        if 'fates_allom_d2bl1' in params and np.any(gpp_lai_within_bounds_mask):
+            print(f"  Creating 3D constrained parameter space colored by d2bl1...")
+            
+            d2bl1_idx = params.index('fates_allom_d2bl1')
+            
+            # Get the constrained points
+            constrained_slatop = lhs_samples[gpp_lai_within_bounds_mask, slatop_idx]
+            constrained_vcmax = lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx]
+            constrained_stoich = lhs_samples[gpp_lai_within_bounds_mask, stoich_idx]
+            constrained_d2bl1 = lhs_samples[gpp_lai_within_bounds_mask, d2bl1_idx]
+            
+            fig_3d_d2bl1 = plt.figure(figsize=(12, 10))
+            ax_3d_d2bl1 = fig_3d_d2bl1.add_subplot(111, projection='3d')
+            
+            # Plot constrained points colored by d2bl1
+            scatter = ax_3d_d2bl1.scatter(constrained_slatop, constrained_vcmax, constrained_stoich,
+                                         s=30, alpha=0.8, c=constrained_d2bl1, cmap='viridis', 
+                                         edgecolors='black', linewidth=0.5, zorder=3)
+            
+            # Add colorbar for d2bl1
+            cbar = plt.colorbar(scatter, ax=ax_3d_d2bl1, pad=0.1, shrink=0.8)
+            cbar.set_label('fates_allom_d2bl1', fontsize=11, fontweight='bold')
+            
+            # Calculate and plot mean
+            mean_slatop = np.mean(constrained_slatop)
+            mean_vcmax = np.mean(constrained_vcmax)
+            mean_stoich = np.mean(constrained_stoich)
+            mean_d2bl1 = np.mean(constrained_d2bl1)
+            
+            ax_3d_d2bl1.scatter(mean_slatop, mean_vcmax, mean_stoich,
+                               s=500, alpha=1.0, c='red', edgecolors='gold', linewidth=3,
+                               marker='*', label=f'Mean', zorder=5)
+            
+            # Add text annotation (positioned above points)
+            z_range = np.max(constrained_stoich) - np.min(constrained_stoich)
+            text_z_offset = z_range * 0.15  # Position 15% above the data range
+            ax_3d_d2bl1.text(mean_slatop, mean_vcmax, mean_stoich + text_z_offset,
+                          f'  Mean:\n  slatop={mean_slatop:.3f}\n  vcmax={mean_vcmax:.2f}\n  stoich_nitr={mean_stoich:.3f}\n  d2bl1={mean_d2bl1:.3f}',
+                          fontsize=9, fontweight='bold',
+                          bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+                                   edgecolor='black', alpha=0.9), zorder=10)
+            
+            # Plot actual ensemble members
+            if 'fates_stoich_nitr' in df_clean.columns:
+                ax_3d_d2bl1.scatter(df_clean['fates_leaf_slatop'], df_clean['fates_leaf_vcmax25top'],
+                                   df_clean['fates_stoich_nitr'],
+                                   s=150, alpha=0.9, c='red', edgecolors='darkred', linewidth=2,
+                                   marker='*', label='Ensemble members', zorder=4)
+                
+                # Add ensemble labels
+                for _, row in df_clean.iterrows():
+                    ax_3d_d2bl1.text(row['fates_leaf_slatop'], row['fates_leaf_vcmax25top'], 
+                                    row['fates_stoich_nitr'],
+                                    f"n{int(row['ensemble_member']):02d}",
+                                    fontsize=8, ha='center', va='bottom', fontweight='bold',
+                                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                             edgecolor='darkred', alpha=0.8))
+            
+            ax_3d_d2bl1.set_xlabel('fates_leaf_slatop', fontsize=11, fontweight='bold')
+            ax_3d_d2bl1.set_ylabel('fates_leaf_vcmax25top', fontsize=11, fontweight='bold')
+            ax_3d_d2bl1.set_zlabel('fates_stoich_nitr', fontsize=11, fontweight='bold')
+            ax_3d_d2bl1.set_title(f'3D Constrained Parameter Space (colored by d2bl1) - {region.replace("_", " ").title()}\\n' +
+                                 f'Points within both LAI and GPP bounds',
+                                 fontsize=14, fontweight='bold', pad=20)
+            ax_3d_d2bl1.legend(loc='upper left', fontsize=9, framealpha=0.9)
+            ax_3d_d2bl1.grid(True, alpha=0.3)
+            
+            # Set viewing angle for better visibility
+            ax_3d_d2bl1.view_init(elev=20, azim=45)
+            
+            output_file_3d_d2bl1 = OUTPUT_DIR_GPP / f"parameter_space_3d_d2bl1_{region}_{EMULATOR_TYPE}.png"
+            fig_3d_d2bl1.savefig(output_file_3d_d2bl1, dpi=300, bbox_inches='tight')
+            print(f"  Saved 3D parameter space (colored by d2bl1) plot: {output_file_3d_d2bl1}")
+            plt.close(fig_3d_d2bl1)
+        else:
+            if 'fates_allom_d2bl1' not in params:
+                print(f"  Skipping 3D d2bl1-colored plot (fates_allom_d2bl1 not in parameters)")
+            elif not np.any(gpp_lai_within_bounds_mask):
+                print(f"  Skipping 3D d2bl1-colored plot (no constrained points)")
+        
+        # Create 3D plot of constrained points colored by emulated VEGC
+        if y_vegc_lhs_pred is not None and np.any(gpp_lai_within_bounds_mask):
+            print(f"  Creating 3D constrained parameter space colored by emulated VEGC...")
+            
+            # Get the constrained points
+            constrained_slatop = lhs_samples[gpp_lai_within_bounds_mask, slatop_idx]
+            constrained_vcmax = lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx]
+            constrained_stoich = lhs_samples[gpp_lai_within_bounds_mask, stoich_idx]
+            constrained_vegc = y_vegc_lhs_pred[gpp_lai_within_bounds_mask]
+            
+            fig_3d_vegc = plt.figure(figsize=(12, 10))
+            ax_3d_vegc = fig_3d_vegc.add_subplot(111, projection='3d')
+            
+            # Plot constrained points colored by emulated VEGC
+            scatter_vegc = ax_3d_vegc.scatter(constrained_slatop, constrained_vcmax, constrained_stoich,
+                                             s=30, alpha=0.8, c=constrained_vegc, cmap='plasma', 
+                                             edgecolors='black', linewidth=0.5, zorder=3)
+            
+            # Add colorbar for VEGC
+            cbar_vegc = plt.colorbar(scatter_vegc, ax=ax_3d_vegc, pad=0.1, shrink=0.8)
+            cbar_vegc.set_label('Emulated VEGC [kgC/m²]', fontsize=11, fontweight='bold')
+            
+            # Calculate and plot mean
+            mean_slatop = np.mean(constrained_slatop)
+            mean_vcmax = np.mean(constrained_vcmax)
+            mean_stoich = np.mean(constrained_stoich)
+            mean_vegc = np.mean(constrained_vegc)
+            
+            ax_3d_vegc.scatter(mean_slatop, mean_vcmax, mean_stoich,
+                              s=500, alpha=1.0, c='red', edgecolors='gold', linewidth=3,
+                              marker='*', label=f'Mean', zorder=5)
+            
+            # Add text annotation (positioned above points)
+            z_range = np.max(constrained_stoich) - np.min(constrained_stoich)
+            text_z_offset = z_range * 0.15  # Position 15% above the data range
+            ax_3d_vegc.text(mean_slatop, mean_vcmax, mean_stoich + text_z_offset,
+                          f'  Mean:\n  slatop={mean_slatop:.3f}\n  vcmax={mean_vcmax:.2f}\n  stoich_nitr={mean_stoich:.3f}\n  VEGC={mean_vegc:.2f}',
+                          fontsize=9, fontweight='bold',
+                          bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+                                   edgecolor='black', alpha=0.9), zorder=10)
+            
+            # Plot actual ensemble members
+            if 'fates_stoich_nitr' in df_clean.columns:
+                ax_3d_vegc.scatter(df_clean['fates_leaf_slatop'], df_clean['fates_leaf_vcmax25top'],
+                                  df_clean['fates_stoich_nitr'],
+                                  s=150, alpha=0.9, c='red', edgecolors='darkred', linewidth=2,
+                                  marker='*', label='Ensemble members', zorder=4)
+                
+                # Add ensemble labels
+                for _, row in df_clean.iterrows():
+                    ax_3d_vegc.text(row['fates_leaf_slatop'], row['fates_leaf_vcmax25top'], 
+                                   row['fates_stoich_nitr'],
+                                   f"n{int(row['ensemble_member']):02d}",
+                                   fontsize=8, ha='center', va='bottom', fontweight='bold',
+                                   bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                            edgecolor='darkred', alpha=0.8))
+            
+            ax_3d_vegc.set_xlabel('fates_leaf_slatop', fontsize=11, fontweight='bold')
+            ax_3d_vegc.set_ylabel('fates_leaf_vcmax25top', fontsize=11, fontweight='bold')
+            ax_3d_vegc.set_zlabel('fates_stoich_nitr', fontsize=11, fontweight='bold')
+            ax_3d_vegc.set_title(f'3D Constrained Parameter Space (colored by emulated VEGC) - {region.replace("_", " ").title()}\\n' +
+                                f'Points within both LAI and GPP bounds',
+                                fontsize=14, fontweight='bold', pad=20)
+            ax_3d_vegc.legend(loc='upper left', fontsize=9, framealpha=0.9)
+            ax_3d_vegc.grid(True, alpha=0.3)
+            
+            # Set viewing angle for better visibility
+            ax_3d_vegc.view_init(elev=20, azim=45)
+            
+            output_file_3d_vegc = OUTPUT_DIR_GPP / f"parameter_space_3d_vegc_{region}_{EMULATOR_TYPE}.png"
+            fig_3d_vegc.savefig(output_file_3d_vegc, dpi=300, bbox_inches='tight')
+            print(f"  Saved 3D parameter space (colored by emulated VEGC) plot: {output_file_3d_vegc}")
+            plt.close(fig_3d_vegc)
+        else:
+            if y_vegc_lhs_pred is None:
+                print(f"  Skipping 3D VEGC-colored plot (VEGC emulator not available)")
+            elif not np.any(gpp_lai_within_bounds_mask):
+                print(f"  Skipping 3D VEGC-colored plot (no constrained points)")
+        
+        # Create 3D plot of constrained points colored by emulated NPP
+        if y_npp_lhs_pred is not None and np.any(gpp_lai_within_bounds_mask):
+            print(f"  Creating 3D constrained parameter space colored by emulated NPP...")
+            
+            # Get the constrained points
+            constrained_slatop = lhs_samples[gpp_lai_within_bounds_mask, slatop_idx]
+            constrained_vcmax = lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx]
+            constrained_stoich = lhs_samples[gpp_lai_within_bounds_mask, stoich_idx]
+            constrained_npp = y_npp_lhs_pred[gpp_lai_within_bounds_mask]
+            
+            fig_3d_npp = plt.figure(figsize=(12, 10))
+            ax_3d_npp = fig_3d_npp.add_subplot(111, projection='3d')
+            
+            # Plot constrained points colored by emulated NPP
+            scatter_npp = ax_3d_npp.scatter(constrained_slatop, constrained_vcmax, constrained_stoich,
+                                           s=30, alpha=0.8, c=constrained_npp, cmap='plasma', 
+                                           edgecolors='black', linewidth=0.5, zorder=3)
+            
+            # Add colorbar for NPP
+            cbar_npp = plt.colorbar(scatter_npp, ax=ax_3d_npp, pad=0.1, shrink=0.8)
+            cbar_npp.set_label('Emulated NPP (gC m$^{-2}$ day$^{-1}$)', fontsize=11, fontweight='bold')
+            
+            # Calculate and plot mean
+            mean_slatop = np.mean(constrained_slatop)
+            mean_vcmax = np.mean(constrained_vcmax)
+            mean_stoich = np.mean(constrained_stoich)
+            mean_npp = np.mean(constrained_npp)
+            
+            ax_3d_npp.scatter(mean_slatop, mean_vcmax, mean_stoich,
+                             s=500, alpha=1.0, c='red', edgecolors='gold', linewidth=3,
+                             marker='*', label=f'Mean', zorder=5)
+            
+            # Add text annotation (positioned above points)
+            z_range = np.max(constrained_stoich) - np.min(constrained_stoich)
+            text_z_offset = z_range * 0.15  # Position 15% above the data range
+            ax_3d_npp.text(mean_slatop, mean_vcmax, mean_stoich + text_z_offset,
+                          f'  Mean:\n  slatop={mean_slatop:.3f}\n  vcmax={mean_vcmax:.2f}\n  stoich_nitr={mean_stoich:.3f}\n  NPP={mean_npp:.2f}',
+                          fontsize=9, fontweight='bold',
+                          bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+                                   edgecolor='black', alpha=0.9), zorder=10)
+            
+            # Plot actual ensemble members
+            if 'fates_stoich_nitr' in df_clean.columns:
+                ax_3d_npp.scatter(df_clean['fates_leaf_slatop'], df_clean['fates_leaf_vcmax25top'],
+                                 df_clean['fates_stoich_nitr'],
+                                 s=150, alpha=0.9, c='red', edgecolors='darkred', linewidth=2,
+                                 marker='*', label='Ensemble members', zorder=4)
+                
+                # Add ensemble labels
+                for _, row in df_clean.iterrows():
+                    ax_3d_npp.text(row['fates_leaf_slatop'], row['fates_leaf_vcmax25top'], 
+                                  row['fates_stoich_nitr'],
+                                  f"n{int(row['ensemble_member']):02d}",
+                                  fontsize=8, ha='center', va='bottom', fontweight='bold',
+                                  bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                           edgecolor='darkred', alpha=0.8))
+            
+            ax_3d_npp.set_xlabel('fates_leaf_slatop', fontsize=11, fontweight='bold')
+            ax_3d_npp.set_ylabel('fates_leaf_vcmax25top', fontsize=11, fontweight='bold')
+            ax_3d_npp.set_zlabel('fates_stoich_nitr', fontsize=11, fontweight='bold')
+            ax_3d_npp.set_title(f'3D Constrained Parameter Space (colored by emulated NPP) - {region.replace("_", " ").title()}\n' +
+                               f'Points within both LAI and GPP bounds',
+                               fontsize=14, fontweight='bold', pad=20)
+            ax_3d_npp.legend(loc='upper left', fontsize=9, framealpha=0.9)
+            ax_3d_npp.grid(True, alpha=0.3)
+            
+            # Set viewing angle for better visibility
+            ax_3d_npp.view_init(elev=20, azim=45)
+            
+            output_file_3d_npp = OUTPUT_DIR_GPP / f"parameter_space_3d_npp_{region}_{EMULATOR_TYPE}.png"
+            fig_3d_npp.savefig(output_file_3d_npp, dpi=300, bbox_inches='tight')
+            print(f"  Saved 3D parameter space (colored by emulated NPP) plot: {output_file_3d_npp}")
+            plt.close(fig_3d_npp)
+        else:
+            if y_npp_lhs_pred is None:
+                print(f"  Skipping 3D NPP-colored plot (NPP emulator not available)")
+            elif not np.any(gpp_lai_within_bounds_mask):
+                print(f"  Skipping 3D NPP-colored plot (no constrained points)")
+    else:
+        print(f"  Skipping 3D parameter space plot (requires slatop, vcmax25top, and stoich_nitr)")
+    
+    # Create histogram plots showing parameter distributions from emulated space
+    print(f"  Creating parameter distribution histograms...")
+    
+    n_rows, n_cols = calculate_subplot_grid(len(params))
+    fig_hist, axes_hist = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
+    axes_hist = axes_hist.flatten() if len(params) > 1 else [axes_hist]
+    fig_hist.suptitle(f'Parameter Distributions from Emulated Space - {region.replace("_", " ").title()}', 
+                      fontsize=16, fontweight='bold')
+    
+    for idx, param in enumerate(params):
+        ax_hist = axes_hist[idx]
+        
+        param_idx = params.index(param)
+        param_values_all = lhs_samples[:, param_idx]
+        
+        # Determine bins for histogram (using all samples)
+        bins = np.linspace(param_values_all.min(), param_values_all.max(), 30)
+        
+        # Plot histogram for all emulated space (light grey, in background)
+        ax_hist.hist(param_values_all, bins=bins, alpha=0.3, color='lightgrey', 
+                    edgecolor='grey', linewidth=0.5, label='All emulated space', zorder=1)
+        
+        # Plot histogram for samples within LAI bounds only (green)
+        lai_only_mask = lai_within_bounds_mask & ~gpp_lai_within_bounds_mask
+        if np.any(lai_only_mask):
+            param_values_lai = lhs_samples[lai_only_mask, param_idx]
+            ax_hist.hist(param_values_lai, bins=bins, alpha=0.5, color='green', 
+                        edgecolor='darkgreen', linewidth=1.0, 
+                        label=f'Within LAI bounds ({np.sum(lai_only_mask)})', zorder=2)
+        
+        # Plot histogram for samples within GPP bounds only (pink)
+        if np.any(gpp_only_within_bounds_mask):
+            param_values_gpp = lhs_samples[gpp_only_within_bounds_mask, param_idx]
+            ax_hist.hist(param_values_gpp, bins=bins, alpha=0.5, color='hotpink', 
+                        edgecolor='deeppink', linewidth=1.0, 
+                        label=f'Within GPP bounds ({np.sum(gpp_only_within_bounds_mask)})', zorder=3)
+        
+        # Plot histogram for samples within BOTH LAI and GPP bounds (black)
+        if np.any(gpp_lai_within_bounds_mask):
+            param_values_both = lhs_samples[gpp_lai_within_bounds_mask, param_idx]
+            ax_hist.hist(param_values_both, bins=bins, alpha=0.7, color='black', 
+                        edgecolor='black', linewidth=1.5, 
+                        label=f'Within both bounds ({np.sum(gpp_lai_within_bounds_mask)})', zorder=4)
+        
+        ax_hist.set_xlabel(param.replace('fates_', '').replace('_', ' '), 
+                          fontsize=11, fontweight='bold')
+        ax_hist.set_ylabel('Frequency', fontsize=11, fontweight='bold')
+        ax_hist.legend(loc='best', fontsize=8, framealpha=0.9)
+        ax_hist.grid(True, alpha=0.3, axis='y')
+    
+    # Hide any unused subplots
+    for idx in range(len(params), len(axes_hist)):
+        axes_hist[idx].axis('off')
+    
+    plt.tight_layout()
+    output_file_hist = OUTPUT_DIR_GPP / f"parameter_distributions_{region}_{EMULATOR_TYPE}.png"
+    fig_hist.savefig(output_file_hist, dpi=300, bbox_inches='tight')
+    print(f"  Saved histogram plot: {output_file_hist}")
+    plt.close(fig_hist)
+
+# Save parameter choices to CSV
+if parameter_choices:
+    param_df = pd.DataFrame(parameter_choices)
+    param_output_file = OUTPUT_DIR_GPP / f"parameter_choice_{EMULATOR_TYPE}.csv"
+    param_df.to_csv(param_output_file, index=False)
+    print(f"\n  Saved parameter choices to: {param_output_file}")
+    print(f"  Parameter choices summary:")
+    print(param_df.to_string(index=False))
+else:
+    print(f"\n  No constrained parameter choices found to save.")
 
 # Create plots of NPP(2000) vs parameters with emulator (colored by LAI)
 print("\n" + "="*60)
@@ -790,16 +1363,16 @@ for region in REGIONS:
         print(f"  WARNING: LAI column not available, using NPP values for coloring")
         y_lai = y  # Fallback to NPP if LAI not available
     
-    # Train Linear Regression emulator for NPP
-    print(f"  Training NPP emulator on {len(df_clean)} ensemble members...")
-    lr_npp = LinearRegression()
+    # Train emulator for NPP
+    print(f"  Training NPP emulator ({EMULATOR_TYPE.upper()}) on {len(df_clean)} ensemble members...")
+    lr_npp = get_emulator()
     lr_npp.fit(X, y)
     
     # Train LAI emulator if LAI data is available
     lr_lai = None
     if lai_col in df_clean.columns:
-        print(f"  Training LAI emulator for coloring...")
-        lr_lai = LinearRegression()
+        print(f"  Training LAI emulator ({EMULATOR_TYPE.upper()}) for coloring...")
+        lr_lai = get_emulator()
         lr_lai.fit(X, y_lai)
     
     # Calculate R² and RMSE
@@ -883,7 +1456,7 @@ for region in REGIONS:
         cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
     
     plt.tight_layout()
-    output_file = OUTPUT_DIR_NPP / f"npp_vs_parameters_{region}.png"
+    output_file = OUTPUT_DIR_NPP / f"npp_vs_parameters_{region}_{EMULATOR_TYPE}.png"
     fig.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"  Saved plot: {output_file}")
     plt.close(fig)
@@ -1046,6 +1619,22 @@ for region in REGIONS:
         if idx == 0:
             print(f"  Adding horizontal lines to emulator response plots:")
         
+        # Add grey shading between observational LAI estimates
+        if region == 'ENTs':
+            # For ENTs, use annual max values
+            lai_modis = obs_lai if not np.isnan(obs_lai) else obs_lai_regional_annual_max_ent.get(region, np.nan)
+            lai_avhrr = obs_lai_regional_annual_max_avhrr_ent.get(region, obs_lai_avhrr) if not np.isnan(obs_lai_avhrr) else np.nan
+            if not np.isnan(lai_modis) and not np.isnan(lai_avhrr):
+                lai_min = min(lai_modis, lai_avhrr)
+                lai_max = max(lai_modis, lai_avhrr)
+                ax.axhspan(lai_min, lai_max, color='grey', alpha=0.2, zorder=0.5)
+        else:
+            # For other regions, use regular values
+            if not np.isnan(obs_lai) and not np.isnan(obs_lai_avhrr):
+                lai_min = min(obs_lai, obs_lai_avhrr)
+                lai_max = max(obs_lai, obs_lai_avhrr)
+                ax.axhspan(lai_min, lai_max, color='grey', alpha=0.2, zorder=0.5)
+        
         # Add observational LAI as horizontal line
         if not np.isnan(obs_lai):
             if idx == 0:
@@ -1083,21 +1672,22 @@ for region in REGIONS:
         ax.legend(loc='best', fontsize=9)
         ax.grid(True, alpha=0.3)
         
-        # Add text showing parameter coefficient
-        coef = lr_lai.coef_[param_idx]
-        ax.text(0.05, 0.95, f'Coefficient: {coef:.4f}',
-               transform=ax.transAxes, fontsize=10, verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        # Add text showing parameter coefficient (only for linear regression)
+        if EMULATOR_TYPE == 'linear':
+            coef = lr_lai.coef_[param_idx]
+            ax.text(0.05, 0.95, f'Coefficient: {coef:.4f}',
+                   transform=ax.transAxes, fontsize=10, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
-    output_file_emulator = OUTPUT_DIR_LAI_EMULATOR / f"lai_emulator_response_{YEAR_RANGE}_{region}.png"
+    output_file_emulator = OUTPUT_DIR_LAI_EMULATOR / f"lai_emulator_response_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
     fig_emulator.savefig(output_file_emulator, dpi=300, bbox_inches='tight')
     print(f"  Saved: {output_file_emulator.name}")
     plt.close(fig_emulator)
     
     # Generate Latin Hypercube samples
     print(f"\n  Generating Latin Hypercube samples...")
-    n_samples = 2000
+    n_samples = 3000
     
     param_bounds = np.array([[df_clean[param].min(), df_clean[param].max()] for param in params])
     
@@ -1289,7 +1879,7 @@ for region in REGIONS:
         cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
         cbar.set_label('fates_leaf_slatop', fontsize=11, fontweight='bold')
     
-    output_file_lai_params = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_with_emulator_{YEAR_RANGE}_{region}.png"
+    output_file_lai_params = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_with_emulator_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
     fig_lai_params.savefig(output_file_lai_params, dpi=300, bbox_inches='tight')
     print(f"  Saved: {output_file_lai_params.name}")
     plt.close(fig_lai_params)
@@ -1306,7 +1896,8 @@ for region in REGIONS:
     else:
         # Train VEGC emulator
         y_vegc = df_clean[vegc_col].values
-        lr_vegc = LinearRegression()
+        lr_vegc = get_emulator()
+        print(f"  Using {EMULATOR_TYPE.upper()} emulator")
         lr_vegc.fit(X, y_vegc)
         
         # Predict VEGC for the 1000 LHS samples
@@ -1373,7 +1964,7 @@ for region in REGIONS:
             cbar = plt.colorbar(scatter_vegc, cax=cbar_ax)
             cbar.set_label('VEGC(2000) [kgC/m²]', fontsize=11, fontweight='bold')
         
-        output_file_lai_vegc = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_colored_by_vegc_{YEAR_RANGE}_{region}.png"
+        output_file_lai_vegc = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_colored_by_vegc_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
         fig_lai_vegc.savefig(output_file_lai_vegc, dpi=300, bbox_inches='tight')
         print(f"    Saved: {output_file_lai_vegc.name}")
         plt.close(fig_lai_vegc)
@@ -1473,7 +2064,8 @@ for region in REGIONS:
         y_cue = df_clean[f'CUE_{ensemble_name}'].values
         y_lai = df_clean[lai_col].values
         
-        lr_cue = LinearRegression()
+        lr_cue = get_emulator()
+        print(f"  Using {EMULATOR_TYPE.upper()} emulator")
         lr_cue.fit(X, y_cue)
         
         y_cue_pred_train = lr_cue.predict(X)
@@ -1485,7 +2077,7 @@ for region in REGIONS:
         print(f"    CUE range: {y_cue.min():.4f} to {y_cue.max():.4f}")
         
         # Generate LHS samples for emulator
-        n_samples = 2000
+        n_samples = 3000
         param_bounds = np.array([[df_clean[param].min(), df_clean[param].max()] for param in params])
         
         sampler = qmc.LatinHypercube(d=len(params), seed=45)
@@ -1545,7 +2137,7 @@ for region in REGIONS:
         
         plt.tight_layout()
         
-        output_file_cue = OUTPUT_DIR_CUE / f"cue_{ensemble_name.lower()}_{YEAR_RANGE}_{region}.png"
+        output_file_cue = OUTPUT_DIR_CUE / f"cue_{ensemble_name.lower()}_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
         fig_cue.savefig(output_file_cue, dpi=300, bbox_inches='tight')
         print(f"    Saved: {output_file_cue.name}")
         plt.close(fig_cue)
