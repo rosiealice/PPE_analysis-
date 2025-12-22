@@ -1,4 +1,4 @@
-
+ 
 #!/usr/bin/env python
 """
 Script to analyze the CSV outputs from ensemble analysis
@@ -37,16 +37,16 @@ print('csv dir:',CSV_DIR)
 print('csv DATA_DIR:',CSV_DIR)
 
 OUTPUT_DIR = DATA_DIR
-OUTPUT_DIR_VEGC_LAI = OUTPUT_DIR / "vegc2000_lai2000"
 OUTPUT_DIR_LAI_EMULATOR = OUTPUT_DIR / "lai_emulator"
 OUTPUT_DIR_CUE = OUTPUT_DIR / "cue"
 OUTPUT_DIR_GPP = OUTPUT_DIR / "gpp"
+OUTPUT_DIR_NPP = OUTPUT_DIR / "npp"
 
 # Create output directories if they don't exist
-OUTPUT_DIR_VEGC_LAI.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR_LAI_EMULATOR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR_CUE.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR_GPP.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR_NPP.mkdir(parents=True, exist_ok=True)
 
 # Define regions
 REGIONS = ['north_65', 'BDTs', 'BETs', 'ENTs', 'AC3G', 'C3G', 'C4']
@@ -82,8 +82,8 @@ OBS_LAI_FILE_MODIS_SUMMER_MEAN = "/datalake/NS9560K/www/diagnostics/noresm/rosie
 OBS_LAI_FILE_MODIS_ANNUAL_MAX = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/modis_lai/modis_lai_mean_annual_maximum.nc"  # Mean annual maximum
 OBS_LAI_FILE_AVHRR = "/datalake/NS9560K/diagnostics/ILAMB-Data/DATA/lai/AVHRR/lai_0.5x0.5.nc"
 OBS_LAI_FILE = OBS_LAI_FILE_MODIS_TIMESERIES  # Primary dataset for backward compatibility
-obs_lai_regional = {}  # For MODIS data (summer LAI for ENTs)
-obs_lai_regional_avhrr = {}  # For AVHRR data
+obs_lai_regional = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
+obs_lai_regional_avhrr = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
 obs_lai_regional_mean_ent = {}  # For mean (annual) LAI for ENTs
 obs_lai_regional_annual_max_ent = {}  # For mean annual maximum LAI for ENTs
 ent_lai_summer_points = []  # Individual summer LAI values for ENT points
@@ -95,635 +95,133 @@ print("\nReading observational GPP data from FLUXCOM...")
 OBS_GPP_FILE_FLUXCOM = "/datalake/NS9560K/diagnostics/ILAMB-Data/DATA/gpp/FLUXCOM/gpp.nc"
 OBS_GPP_FILE_WECANN = "/datalake/NS9560K/diagnostics/ILAMB-Data/DATA/gpp/WECANN/gpp.nc"
 OBS_GPP_FILE = OBS_GPP_FILE_FLUXCOM  # Primary dataset for backward compatibility
-obs_gpp_regional = {}  # For FLUXCOM data
-obs_gpp_regional_wecann = {}  # For WECANN data
 
-# Load BDT grid cells if available
+# Read observational data from CSV file
+OBS_DATA_CSV = Path("/nird/home/rosief/gt/PPE_analysis/data_extraction/obs_gpp_lai_data.csv")
+print(f"\nReading observational data from {OBS_DATA_CSV}...")
+
+obs_gpp_regional = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
+obs_gpp_regional_wecann = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
+obs_lai_regional = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
+obs_lai_regional_avhrr = {region: np.nan for region in REGIONS}  # Initialize all regions to NaN
+obs_lai_regional_avhrr_summer = {region: np.nan for region in REGIONS}  # For summer AVHRR LAI
+obs_lai_regional_mean_ent = {}  # For mean (annual) LAI for ENTs
+obs_lai_regional_annual_max_ent = {}  # For mean annual maximum LAI for ENTs (MODIS)
+obs_lai_regional_annual_max_avhrr_ent = {}  # For mean annual maximum LAI for ENTs (AVHRR)
+
+if OBS_DATA_CSV.exists():
+    obs_df = pd.read_csv(OBS_DATA_CSV)
+    print(f"  Loaded observational data")
+    print(f"  Columns: {list(obs_df.columns)}")
+    print(f"  Regions: {list(obs_df['region']) if 'region' in obs_df.columns else 'No region column'}")
+    
+    # Extract observations for each region
+    for _, row in obs_df.iterrows():
+        region = row.get('region', None)
+        if region in REGIONS:
+            # GPP observations
+            if 'gpp_fluxcom' in obs_df.columns and not pd.isna(row['gpp_fluxcom']):
+                obs_gpp_regional[region] = float(row['gpp_fluxcom'])
+                print(f"  {region} FLUXCOM GPP: {obs_gpp_regional[region]:.4f}")
+            if 'gpp_wecann' in obs_df.columns and not pd.isna(row['gpp_wecann']):
+                obs_gpp_regional_wecann[region] = float(row['gpp_wecann'])
+                print(f"  {region} WECANN GPP: {obs_gpp_regional_wecann[region]:.4f}")
+            
+            # LAI observations
+            # For ENTs, use summer LAI; for others use regular LAI
+            if region == 'ENTs' and 'lai_modis_summer' in obs_df.columns and not pd.isna(row['lai_modis_summer']):
+                obs_lai_regional[region] = float(row['lai_modis_summer'])
+                print(f"  {region} MODIS Summer LAI: {obs_lai_regional[region]:.4f}")
+            elif 'lai_modis' in obs_df.columns and not pd.isna(row['lai_modis']):
+                obs_lai_regional[region] = float(row['lai_modis'])
+                print(f"  {region} MODIS LAI: {obs_lai_regional[region]:.4f}")
+                
+            if 'lai_avhrr' in obs_df.columns and not pd.isna(row['lai_avhrr']):
+                obs_lai_regional_avhrr[region] = float(row['lai_avhrr'])
+                print(f"  {region} AVHRR LAI: {obs_lai_regional_avhrr[region]:.4f}")
+            
+            if 'lai_avhrr_summer' in obs_df.columns and not pd.isna(row['lai_avhrr_summer']):
+                obs_lai_regional_avhrr_summer[region] = float(row['lai_avhrr_summer'])
+                if region == 'ENTs':
+                    print(f"  {region} AVHRR Summer LAI: {obs_lai_regional_avhrr_summer[region]:.4f}")
+            
+            # ENT-specific LAI observations
+            if region == 'ENTs':
+                if 'lai_modis' in obs_df.columns and not pd.isna(row['lai_modis']):
+                    obs_lai_regional_mean_ent[region] = float(row['lai_modis'])
+                    print(f"  {region} MODIS Mean LAI: {obs_lai_regional_mean_ent[region]:.4f}")
+                if 'lai_modis_annual_max' in obs_df.columns and not pd.isna(row['lai_modis_annual_max']):
+                    obs_lai_regional_annual_max_ent[region] = float(row['lai_modis_annual_max'])
+                    print(f"  {region} MODIS Annual Max LAI: {obs_lai_regional_annual_max_ent[region]:.4f}")
+                if 'lai_avhrr' in obs_df.columns and not pd.isna(row['lai_avhrr']):
+                    obs_lai_regional_mean_ent[f'{region}_avhrr'] = float(row['lai_avhrr'])
+                    print(f"  {region} AVHRR Mean LAI: {obs_lai_regional_mean_ent[f'{region}_avhrr']:.4f}")
+                if 'lai_avhrr_annual_max' in obs_df.columns and not pd.isna(row['lai_avhrr_annual_max']):
+                    obs_lai_regional_annual_max_avhrr_ent[region] = float(row['lai_avhrr_annual_max'])
+                    print(f"  {region} AVHRR Annual Max LAI: {obs_lai_regional_annual_max_avhrr_ent[region]:.4f}")
+else:
+    print(f"  WARNING: Observational data CSV not found: {OBS_DATA_CSV}")
+    print(f"  All observations will be set to NaN")
+
+# Load ensemble data and extract grid cells from the CSV files themselves
+print("\nLoading ensemble data and grid cell locations from CSV files...")
+data = {}
 BDT_GRID_CELLS = None
-BDT_LAT_LONS_FILE = CSV_DIR / "bdt_grid_cells.txt"
-if BDT_LAT_LONS_FILE.exists():
-    print("\nLoading BDT grid cell locations...")
-    bdt_data = np.loadtxt(BDT_LAT_LONS_FILE, skiprows=1)
-    BDT_GRID_CELLS = {
-        'lats': bdt_data[:, 0],
-        'lons': bdt_data[:, 1]
-    }
-    print(f"  Loaded {len(BDT_GRID_CELLS['lats'])} BDT grid cells")
-
-# Load BET grid cells if available
 BET_GRID_CELLS = None
-BET_LAT_LONS_FILE = CSV_DIR / "bet_grid_cells.txt"
-if BET_LAT_LONS_FILE.exists():
-    print("\nLoading BET grid cell locations...")
-    bet_data = np.loadtxt(BET_LAT_LONS_FILE, skiprows=1)
-    BET_GRID_CELLS = {
-        'lats': bet_data[:, 0],
-        'lons': bet_data[:, 1]
-    }
-    print(f"  Loaded {len(BET_GRID_CELLS['lats'])} BET grid cells")
-
-# Load ENT grid cells if available
 ENT_GRID_CELLS = None
-ENT_LAT_LONS_FILE = CSV_DIR / "ent_grid_cells.txt"
-if ENT_LAT_LONS_FILE.exists():
-    print("\nLoading ENT grid cell locations...")
-    ent_data = np.loadtxt(ENT_LAT_LONS_FILE, skiprows=1)
-    ENT_GRID_CELLS = {
-        'lats': ent_data[:, 0],
-        'lons': ent_data[:, 1]
-    }
-    print(f"  Loaded {len(ENT_GRID_CELLS['lats'])} ENT grid cells")
-
-# Load AC3G grid cells if available
 AC3G_GRID_CELLS = None
-AC3G_LAT_LONS_FILE = CSV_DIR / "ac3g_grid_cells.txt"
-if AC3G_LAT_LONS_FILE.exists():
-    print("\nLoading AC3G grid cell locations...")
-    ac3g_data = np.loadtxt(AC3G_LAT_LONS_FILE, skiprows=1)
-    AC3G_GRID_CELLS = {
-        'lats': ac3g_data[:, 0],
-        'lons': ac3g_data[:, 1]
-    }
-    print(f"  Loaded {len(AC3G_GRID_CELLS['lats'])} AC3G grid cells")
-
-# Load C3G grid cells if available
 C3G_GRID_CELLS = None
-C3G_LAT_LONS_FILE = CSV_DIR / "c3g_grid_cells.txt"
-if C3G_LAT_LONS_FILE.exists():
-    print("\nLoading C3G grid cell locations...")
-    c3g_data = np.loadtxt(C3G_LAT_LONS_FILE, skiprows=1)
-    C3G_GRID_CELLS = {
-        'lats': c3g_data[:, 0],
-        'lons': c3g_data[:, 1]
-    }
-    print(f"  Loaded {len(C3G_GRID_CELLS['lats'])} C3G grid cells")
-
-# Load C4 grid cells if available
 C4_GRID_CELLS = None
-C4_LAT_LONS_FILE = CSV_DIR / "c4_grid_cells.txt"
-if C4_LAT_LONS_FILE.exists():
-    print("\nLoading C4 grid cell locations...")
-    c4_data = np.loadtxt(C4_LAT_LONS_FILE, skiprows=1)
-    C4_GRID_CELLS = {
-        'lats': c4_data[:, 0],
-        'lons': c4_data[:, 1]
-    }
-    print(f"  Loaded {len(C4_GRID_CELLS['lats'])} C4 grid cells")
 
-try:
-    # Load normal MODIS LAI timeseries for non-ENT PFTs
-    ds_obs = xr.open_dataset(OBS_LAI_FILE_MODIS_TIMESERIES)
-    print(f"  Loaded MODIS LAI timeseries data")
-    print(f"  Available variables: {list(ds_obs.data_vars)}")
-    
-    # Convert longitude from -180:180 to 0:360 if needed
-    if ds_obs['lon'].min() < 0:
-        print(f"  Converting longitude from -180:180 to 0:360...")
-        ds_obs = ds_obs.assign_coords(lon=(ds_obs['lon'] % 360))
-        # Sort by longitude to maintain order
-        ds_obs = ds_obs.sortby('lon')
-    
-    print(f"  Longitude range: {float(ds_obs['lon'].min()):.2f} to {float(ds_obs['lon'].max()):.2f}")
-    
-    # Determine the LAI variable name
-    lai_var = None
-    for var in ['lai', 'LAI', 'leaf_area_index']:
-        if var in ds_obs:
-            lai_var = var
-            break
-    
-    if lai_var is None:
-        print(f"  WARNING: Could not find LAI variable in dataset")
-        for region in REGIONS:
-            obs_lai_regional[region] = np.nan
+for region in REGIONS:
+    csv_file = CSV_DIR / f"ensemble_data_{YEAR_RANGE}_{region}.csv"
+    if csv_file.exists():
+        df = pd.read_csv(csv_file)
+        data[region] = df
+        print(f"  Loaded {region}: {len(df)} ensemble members")
+        print(f"    Columns: {list(df.columns)}")
+        
+        # Extract grid cell coordinates if lat/lon columns exist
+        if 'lat' in df.columns and 'lon' in df.columns:
+            # Get unique lat/lon pairs (in case there are duplicates across ensemble members)
+            unique_coords = df[['lat', 'lon']].drop_duplicates()
+            grid_cells = {
+                'lats': unique_coords['lat'].values,
+                'lons': unique_coords['lon'].values
+            }
+            
+            # Assign to appropriate variable
+            if region == 'BDTs':
+                BDT_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} BDT grid cells")
+            elif region == 'BETs':
+                BET_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} BET grid cells")
+            elif region == 'ENTs':
+                ENT_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} ENT grid cells")
+            elif region == 'AC3G':
+                AC3G_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} AC3G grid cells")
+            elif region == 'C3G':
+                C3G_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} C3G grid cells")
+            elif region == 'C4':
+                C4_GRID_CELLS = grid_cells
+                print(f"    Extracted {len(grid_cells['lats'])} C4 grid cells")
+        else:
+            print(f"    WARNING: No 'lat' or 'lon' columns found - cannot extract grid cells for observations")
     else:
-        print(f"  Using LAI variable: {lai_var}")
-        
-        # Calculate regional averages
-        for region, bounds in REGION_BOUNDS.items():
-            # Subset by lat and lon
-            ds_subset = ds_obs[lai_var].where(
-                (ds_obs['lat'] >= bounds['lat_min']) &
-                (ds_obs['lat'] <= bounds['lat_max']) &
-                (ds_obs['lon'] >= bounds['lon_min']) &
-                (ds_obs['lon'] <= bounds['lon_max']),
-                drop=False
-            )
-            # Compute spatial and temporal mean (excluding NaN)
-            obs_mean = float(ds_subset.mean(skipna=True).values)
-            obs_lai_regional[region] = obs_mean
-            print(f"  {region}: {obs_mean:.4f}")
-        
-        # Handle BDTs separately using specific grid cells
-        if BDT_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for BDT grid cells...")
-            bdt_lai_values = []
-            for lat, lon in zip(BDT_GRID_CELLS['lats'], BDT_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bdt_lai_values.append(float(lai_val))
-            obs_lai_regional['BDTs'] = np.nanmean(bdt_lai_values)
-            print(f"  BDTs: {obs_lai_regional['BDTs']:.4f}")
-        
-        # Handle BETs separately using specific grid cells
-        if BET_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for BET grid cells...")
-            bet_lai_values = []
-            for lat, lon in zip(BET_GRID_CELLS['lats'], BET_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bet_lai_values.append(float(lai_val))
-            obs_lai_regional['BETs'] = np.nanmean(bet_lai_values)
-            print(f"  BETs: {obs_lai_regional['BETs']:.4f}")
-        
-        # Handle ENTs separately using specific grid cells and summer mean file
-        if ENT_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for ENT grid cells from summer mean file...")
-            # Load the summer mean file specifically for ENTs
-            ds_ent = xr.open_dataset(OBS_LAI_FILE_MODIS_SUMMER_MEAN)
-            # Convert longitude if needed
-            if ds_ent['lon'].min() < 0:
-                ds_ent = ds_ent.assign_coords(lon=(ds_ent['lon'] % 360))
-                ds_ent = ds_ent.sortby('lon')
-            
-            # Find LAI variable in ENT dataset
-            lai_var_ent = None
-            for var in ['lai', 'LAI', 'leaf_area_index']:
-                if var in ds_ent:
-                    lai_var_ent = var
-                    break
-            
-            if lai_var_ent:
-                ent_lai_values = []
-                for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                    lai_val = ds_ent[lai_var_ent].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                    ent_lai_values.append(float(lai_val))
-                obs_lai_regional['ENTs'] = np.nanmean(ent_lai_values)
-                ent_lai_summer_points = ent_lai_values.copy()  # Store individual point values
-                print(f"  ENTs (summer): {obs_lai_regional['ENTs']:.4f}")
-            else:
-                print(f"  WARNING: Could not find LAI variable in ENT summer mean file")
-                obs_lai_regional['ENTs'] = np.nan
-            
-            ds_ent.close()
-            
-            # Also extract mean (annual) LAI for ENTs from timeseries file
-            print(f"  Extracting MODIS mean LAI for ENT grid cells from timeseries file...")
-            ent_lai_mean_values = []
-            for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ent_lai_mean_values.append(float(lai_val))
-            obs_lai_regional_mean_ent['ENTs'] = np.nanmean(ent_lai_mean_values)
-            ent_lai_mean_points = ent_lai_mean_values.copy()  # Store individual point values
-            print(f"  ENTs (mean): {obs_lai_regional_mean_ent['ENTs']:.4f}")
-            
-            # Also extract mean annual maximum LAI for ENTs
-            if os.path.exists(OBS_LAI_FILE_MODIS_ANNUAL_MAX):
-                print(f"  Extracting MODIS mean annual maximum LAI for ENT grid cells...")
-                ds_annual_max = xr.open_dataset(OBS_LAI_FILE_MODIS_ANNUAL_MAX)
-                lai_var_max = None
-                for var in ['lai', 'LAI', 'leaf_area_index']:
-                    if var in ds_annual_max:
-                        lai_var_max = var
-                        break
-                
-                if lai_var_max:
-                    ent_lai_annual_max_values = []
-                    for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                        lai_val = ds_annual_max[lai_var_max].sel(lat=lat, lon=lon, method='nearest').values
-                        ent_lai_annual_max_values.append(float(lai_val))
-                    obs_lai_regional_annual_max_ent['ENTs'] = np.nanmean(ent_lai_annual_max_values)
-                    ent_lai_annual_max_points = ent_lai_annual_max_values.copy()
-                    print(f"  ENTs (annual max): {obs_lai_regional_annual_max_ent['ENTs']:.4f}")
-                else:
-                    print(f"  WARNING: Could not find LAI variable in annual max file")
-                    obs_lai_regional_annual_max_ent['ENTs'] = np.nan
-                
-                ds_annual_max.close()
-            else:
-                print(f"  WARNING: Annual max file not found: {OBS_LAI_FILE_MODIS_ANNUAL_MAX}")
-                obs_lai_regional_annual_max_ent['ENTs'] = np.nan
-            
-            # Create scatter plot comparing summer vs mean LAI for ENT points
-            if len(ent_lai_summer_points) > 0 and len(ent_lai_mean_points) > 0:
-                print(f"\n  Creating scatter plot: Summer LAI vs Mean LAI for ENT points...")
-                fig_ent, ax_ent = plt.subplots(figsize=(10, 8))
-                
-                # Scatter plot
-                ax_ent.scatter(ent_lai_mean_points, ent_lai_summer_points, s=100, alpha=0.6,
-                              c='forestgreen', edgecolors='black', linewidth=1)
-                
-                # Add 1:1 line
-                min_val = min(min(ent_lai_mean_points), min(ent_lai_summer_points))
-                max_val = max(max(ent_lai_mean_points), max(ent_lai_summer_points))
-                ax_ent.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, 
-                           alpha=0.7, label='1:1 line')
-                
-                # Add mean values as lines
-                ax_ent.axvline(obs_lai_regional_mean_ent['ENTs'], color='darkblue', 
-                              linestyle='-.', linewidth=2, alpha=0.7, 
-                              label=f'Mean LAI avg: {obs_lai_regional_mean_ent["ENTs"]:.2f}')
-                ax_ent.axhline(obs_lai_regional['ENTs'], color='darkgreen', 
-                              linestyle='--', linewidth=2, alpha=0.7, 
-                              label=f'Summer LAI avg: {obs_lai_regional["ENTs"]:.2f}')
-                
-                ax_ent.set_xlabel('Mean (Annual) LAI [m²/m²]', fontsize=12, fontweight='bold')
-                ax_ent.set_ylabel('Summer LAI [m²/m²]', fontsize=12, fontweight='bold')
-                ax_ent.set_title('MODIS LAI: Summer vs Mean for ENT Grid Points', 
-                                fontsize=14, fontweight='bold')
-                ax_ent.legend(loc='best', fontsize=10)
-                ax_ent.grid(True, alpha=0.3)
-                
-                # Add text with statistics
-                correlation = np.corrcoef(ent_lai_mean_points, ent_lai_summer_points)[0, 1]
-                n_points = len(ent_lai_mean_points)
-                ax_ent.text(0.05, 0.95, f'N points: {n_points}\nCorrelation: {correlation:.3f}',
-                           transform=ax_ent.transAxes, fontsize=11, verticalalignment='top',
-                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-                
-                output_file_ent = OUTPUT_DIR / "ent_summer_vs_mean_lai.png"
-                fig_ent.savefig(output_file_ent, dpi=300, bbox_inches='tight')
-                print(f"  Saved: {output_file_ent}")
-                plt.close(fig_ent)
-        
-        # Handle AC3G separately using specific grid cells
-        if AC3G_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for AC3G grid cells...")
-            ac3g_lai_values = []
-            for lat, lon in zip(AC3G_GRID_CELLS['lats'], AC3G_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ac3g_lai_values.append(float(lai_val))
-            obs_lai_regional['AC3G'] = np.nanmean(ac3g_lai_values)
-            print(f"  AC3G: {obs_lai_regional['AC3G']:.4f}")
-        
-        # Handle C3G separately using specific grid cells
-        if C3G_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for C3G grid cells...")
-            c3g_lai_values = []
-            for lat, lon in zip(C3G_GRID_CELLS['lats'], C3G_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c3g_lai_values.append(float(lai_val))
-            obs_lai_regional['C3G'] = np.nanmean(c3g_lai_values)
-            print(f"  C3G: {obs_lai_regional['C3G']:.4f}")
-        
-        # Handle C4 separately using specific grid cells
-        if C4_GRID_CELLS is not None:
-            print(f"\n  Extracting MODIS LAI for C4 grid cells...")
-            c4_lai_values = []
-            for lat, lon in zip(C4_GRID_CELLS['lats'], C4_GRID_CELLS['lons']):
-                lai_val = ds_obs[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c4_lai_values.append(float(lai_val))
-            obs_lai_regional['C4'] = np.nanmean(c4_lai_values)
-            print(f"  C4: {obs_lai_regional['C4']:.4f}")
-        
-        ds_obs.close()
-        
-except Exception as e:
-    print(f"  ERROR reading observational LAI data: {str(e)}")
-    for region in REGIONS:
-        obs_lai_regional[region] = np.nan
+        print(f"  WARNING: CSV file not found: {csv_file}")
 
-# Read observational LAI data from AVHRR
-print("\nReading observational LAI data from AVHRR...")
-try:
-    ds_obs_avhrr = xr.open_dataset(OBS_LAI_FILE_AVHRR)
-    print(f"  Loaded AVHRR LAI data")
-    print(f"  Available variables: {list(ds_obs_avhrr.data_vars)}")
-    
-    # Convert longitude from -180:180 to 0:360 if needed
-    if ds_obs_avhrr['lon'].min() < 0:
-        print(f"  Converting longitude from -180:180 to 0:360...")
-        ds_obs_avhrr = ds_obs_avhrr.assign_coords(lon=(ds_obs_avhrr['lon'] % 360))
-        # Sort by longitude to maintain order
-        ds_obs_avhrr = ds_obs_avhrr.sortby('lon')
-    
-    print(f"  Longitude range: {float(ds_obs_avhrr['lon'].min()):.2f} to {float(ds_obs_avhrr['lon'].max()):.2f}")
-    
-    # Determine the LAI variable name
-    lai_var = None
-    for var in ['lai', 'LAI', 'leaf_area_index']:
-        if var in ds_obs_avhrr:
-            lai_var = var
-            break
-    
-    if lai_var is None:
-        print(f"  WARNING: Could not find LAI variable in dataset")
-        for region in REGIONS:
-            obs_lai_regional_avhrr[region] = np.nan
-    else:
-        print(f"  Using LAI variable: {lai_var}")
-        
-        # Calculate regional averages
-        for region, bounds in REGION_BOUNDS.items():
-            # Subset by lat and lon
-            ds_subset = ds_obs_avhrr[lai_var].where(
-                (ds_obs_avhrr['lat'] >= bounds['lat_min']) &
-                (ds_obs_avhrr['lat'] <= bounds['lat_max']) &
-                (ds_obs_avhrr['lon'] >= bounds['lon_min']) &
-                (ds_obs_avhrr['lon'] <= bounds['lon_max']),
-                drop=False
-            )
-            # Compute spatial and temporal mean (excluding NaN)
-            obs_mean = float(ds_subset.mean(skipna=True).values)
-            obs_lai_regional_avhrr[region] = obs_mean
-            print(f"  {region}: {obs_mean:.4f}")
-        
-        # Handle BDTs separately using specific grid cells
-        if BDT_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for BDT grid cells...")
-            bdt_lai_values = []
-            for lat, lon in zip(BDT_GRID_CELLS['lats'], BDT_GRID_CELLS['lons']):
-                lai_val = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bdt_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['BDTs'] = np.nanmean(bdt_lai_values)
-            print(f"  BDTs: {obs_lai_regional_avhrr['BDTs']:.4f}")
-        
-        # Handle BETs separately using specific grid cells
-        if BET_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for BET grid cells...")
-            bet_lai_values = []
-            for lat, lon in zip(BET_GRID_CELLS['lats'], BET_GRID_CELLS['lons']):
-                lai_val = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bet_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['BETs'] = np.nanmean(bet_lai_values)
-            print(f"  BETs: {obs_lai_regional_avhrr['BETs']:.4f}")
-        
-        # Handle ENTs separately using specific grid cells
-        if ENT_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for ENT grid cells (summer months 6, 7, 8)...")
-            ent_lai_values = []
-            for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                # Select summer months (6, 7, 8) for ENTs
-                ds_point = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest')
-                if 'time' in ds_point.dims:
-                    ds_summer = ds_point.sel(time=ds_point.time.dt.month.isin([6, 7, 8]))
-                    lai_val = ds_summer.mean(skipna=True).values
-                else:
-                    lai_val = ds_point.mean(skipna=True).values
-                ent_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['ENTs'] = np.nanmean(ent_lai_values)
-            print(f"  ENTs: {obs_lai_regional_avhrr['ENTs']:.4f}")
-        
-        # Handle AC3G separately using specific grid cells
-        if AC3G_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for AC3G grid cells...")
-            ac3g_lai_values = []
-            for lat, lon in zip(AC3G_GRID_CELLS['lats'], AC3G_GRID_CELLS['lons']):
-                lai_val = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ac3g_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['AC3G'] = np.nanmean(ac3g_lai_values)
-            print(f"  AC3G: {obs_lai_regional_avhrr['AC3G']:.4f}")
-        
-        # Handle C3G separately using specific grid cells
-        if C3G_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for C3G grid cells...")
-            c3g_lai_values = []
-            for lat, lon in zip(C3G_GRID_CELLS['lats'], C3G_GRID_CELLS['lons']):
-                lai_val = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c3g_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['C3G'] = np.nanmean(c3g_lai_values)
-            print(f"  C3G: {obs_lai_regional_avhrr['C3G']:.4f}")
-        
-        # Handle C4 separately using specific grid cells
-        if C4_GRID_CELLS is not None:
-            print(f"\n  Extracting AVHRR LAI for C4 grid cells...")
-            c4_lai_values = []
-            for lat, lon in zip(C4_GRID_CELLS['lats'], C4_GRID_CELLS['lons']):
-                lai_val = ds_obs_avhrr[lai_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c4_lai_values.append(float(lai_val))
-            obs_lai_regional_avhrr['C4'] = np.nanmean(c4_lai_values)
-            print(f"  C4: {obs_lai_regional_avhrr['C4']:.4f}")
-        
-        ds_obs_avhrr.close()
-        
-except Exception as e:
-    print(f"  ERROR reading AVHRR LAI data: {str(e)}")
-    for region in REGIONS:
-        obs_lai_regional_avhrr[region] = np.nan
-
-
-# Read observational GPP data from FLUXCOM
-try:
-    ds_obs_gpp = xr.open_dataset(OBS_GPP_FILE)
-    print(f"  Loaded FLUXCOM GPP data")
-    print(f"  Available variables: {list(ds_obs_gpp.data_vars)}")
-    
-    # Convert longitude from -180:180 to 0:360 if needed
-    if ds_obs_gpp['lon'].min() < 0:
-        print(f"  Converting longitude from -180:180 to 0:360...")
-        ds_obs_gpp = ds_obs_gpp.assign_coords(lon=(ds_obs_gpp['lon'] % 360))
-        # Sort by longitude to maintain order
-        ds_obs_gpp = ds_obs_gpp.sortby('lon')
-    
-    print(f"  Longitude range: {float(ds_obs_gpp['lon'].min()):.2f} to {float(ds_obs_gpp['lon'].max()):.2f}")
-    
-    # Determine the GPP variable name
-    gpp_var = None
-    for var in ['gpp', 'GPP', 'gross_primary_productivity']:
-        if var in ds_obs_gpp:
-            gpp_var = var
-            break
-    
-    if gpp_var is None:
-        print(f"  WARNING: Could not find GPP variable in dataset")
-        for region in REGIONS:
-            obs_gpp_regional[region] = np.nan
-    else:
-        print(f"  Using GPP variable: {gpp_var}")
-        print(f"  GPP units: gC m-2 day-1 (FLUXCOM data product)")
-        
-        # Calculate regional averages
-        for region, bounds in REGION_BOUNDS.items():
-            # Subset by lat and lon
-            ds_subset = ds_obs_gpp[gpp_var].where(
-                (ds_obs_gpp['lat'] >= bounds['lat_min']) &
-                (ds_obs_gpp['lat'] <= bounds['lat_max']) &
-                (ds_obs_gpp['lon'] >= bounds['lon_min']) &
-                (ds_obs_gpp['lon'] <= bounds['lon_max']),
-                drop=False
-            )
-            # Compute spatial and temporal mean (excluding NaN)
-            obs_mean = float(ds_subset.mean(skipna=True).values)
-            obs_gpp_regional[region] = obs_mean
-            print(f"  {region}: {obs_mean:.4f} gC m-2 day-1")
-        
-        # Handle BDTs separately using specific grid cells
-        if BDT_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for BDT grid cells...")
-            bdt_gpp_values = []
-            for lat, lon in zip(BDT_GRID_CELLS['lats'], BDT_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bdt_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['BDTs'] = np.nanmean(bdt_gpp_values)
-            print(f"  BDTs: {obs_gpp_regional['BDTs']:.4f} gC m-2 day-1")
-        
-        # Handle BETs separately using specific grid cells
-        if BET_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for BET grid cells...")
-            bet_gpp_values = []
-            for lat, lon in zip(BET_GRID_CELLS['lats'], BET_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bet_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['BETs'] = np.nanmean(bet_gpp_values)
-            print(f"  BETs: {obs_gpp_regional['BETs']:.4f} gC m-2 day-1")
-        
-        # Handle ENTs separately using specific grid cells
-        if ENT_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for ENT grid cells...")
-            ent_gpp_values = []
-            for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ent_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['ENTs'] = np.nanmean(ent_gpp_values)
-            print(f"  ENTs: {obs_gpp_regional['ENTs']:.4f} gC m-2 day-1")
-        
-        # Handle AC3G separately using specific grid cells
-        if AC3G_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for AC3G grid cells...")
-            ac3g_gpp_values = []
-            for lat, lon in zip(AC3G_GRID_CELLS['lats'], AC3G_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ac3g_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['AC3G'] = np.nanmean(ac3g_gpp_values)
-            print(f"  AC3G: {obs_gpp_regional['AC3G']:.4f} gC m-2 day-1")
-        
-        # Handle C3G separately using specific grid cells
-        if C3G_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for C3G grid cells...")
-            c3g_gpp_values = []
-            for lat, lon in zip(C3G_GRID_CELLS['lats'], C3G_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c3g_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['C3G'] = np.nanmean(c3g_gpp_values)
-            print(f"  C3G: {obs_gpp_regional['C3G']:.4f} gC m-2 day-1")
-        
-        # Handle C4 separately using specific grid cells
-        if C4_GRID_CELLS is not None:
-            print(f"\n  Extracting FLUXCOM GPP for C4 grid cells...")
-            c4_gpp_values = []
-            for lat, lon in zip(C4_GRID_CELLS['lats'], C4_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c4_gpp_values.append(float(gpp_val))
-            obs_gpp_regional['C4'] = np.nanmean(c4_gpp_values)
-            print(f"  C4: {obs_gpp_regional['C4']:.4f} gC m-2 day-1")
-        
-        ds_obs_gpp.close()
-        
-except Exception as e:
-    print(f"  ERROR reading observational GPP data: {str(e)}")
-    for region in REGIONS:
-        obs_gpp_regional[region] = np.nan
-
-# Read observational GPP data from WECANN
-print("\nReading observational GPP data from WECANN...")
-try:
-    ds_obs_gpp_wecann = xr.open_dataset(OBS_GPP_FILE_WECANN)
-    print(f"  Loaded WECANN GPP data")
-    print(f"  Available variables: {list(ds_obs_gpp_wecann.data_vars)}")
-    
-    # Convert longitude from -180:180 to 0:360 if needed
-    if ds_obs_gpp_wecann['lon'].min() < 0:
-        print(f"  Converting longitude from -180:180 to 0:360...")
-        ds_obs_gpp_wecann = ds_obs_gpp_wecann.assign_coords(lon=(ds_obs_gpp_wecann['lon'] % 360))
-        # Sort by longitude to maintain order
-        ds_obs_gpp_wecann = ds_obs_gpp_wecann.sortby('lon')
-    
-    print(f"  Longitude range: {float(ds_obs_gpp_wecann['lon'].min()):.2f} to {float(ds_obs_gpp_wecann['lon'].max()):.2f}")
-    
-    # Determine the GPP variable name
-    gpp_var = None
-    for var in ['gpp', 'GPP', 'gross_primary_productivity']:
-        if var in ds_obs_gpp_wecann:
-            gpp_var = var
-            break
-    
-    if gpp_var is None:
-        print(f"  WARNING: Could not find GPP variable in dataset")
-        for region in REGIONS:
-            obs_gpp_regional_wecann[region] = np.nan
-    else:
-        print(f"  Using GPP variable: {gpp_var}")
-        print(f"  GPP units: gC m-2 day-1 (WECANN data product)")
-        
-        # Calculate regional averages
-        for region, bounds in REGION_BOUNDS.items():
-            # Subset by lat and lon
-            ds_subset = ds_obs_gpp_wecann[gpp_var].where(
-                (ds_obs_gpp_wecann['lat'] >= bounds['lat_min']) &
-                (ds_obs_gpp_wecann['lat'] <= bounds['lat_max']) &
-                (ds_obs_gpp_wecann['lon'] >= bounds['lon_min']) &
-                (ds_obs_gpp_wecann['lon'] <= bounds['lon_max']),
-                drop=False
-            )
-            # Compute spatial and temporal mean (excluding NaN)
-            obs_mean = float(ds_subset.mean(skipna=True).values)
-            obs_gpp_regional_wecann[region] = obs_mean
-            print(f"  {region}: {obs_mean:.4f} gC m-2 day-1")
-        
-        # Handle BDTs separately using specific grid cells
-        if BDT_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for BDT grid cells...")
-            bdt_gpp_values = []
-            for lat, lon in zip(BDT_GRID_CELLS['lats'], BDT_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bdt_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['BDTs'] = np.nanmean(bdt_gpp_values)
-            print(f"  BDTs: {obs_gpp_regional_wecann['BDTs']:.4f} gC m-2 day-1")
-        
-        # Handle BETs separately using specific grid cells
-        if BET_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for BET grid cells...")
-            bet_gpp_values = []
-            for lat, lon in zip(BET_GRID_CELLS['lats'], BET_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                bet_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['BETs'] = np.nanmean(bet_gpp_values)
-            print(f"  BETs: {obs_gpp_regional_wecann['BETs']:.4f} gC m-2 day-1")
-        
-        # Handle ENTs separately using specific grid cells
-        if ENT_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for ENT grid cells...")
-            ent_gpp_values = []
-            for lat, lon in zip(ENT_GRID_CELLS['lats'], ENT_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ent_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['ENTs'] = np.nanmean(ent_gpp_values)
-            print(f"  ENTs: {obs_gpp_regional_wecann['ENTs']:.4f} gC m-2 day-1")
-        
-        # Handle AC3G separately using specific grid cells
-        if AC3G_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for AC3G grid cells...")
-            ac3g_gpp_values = []
-            for lat, lon in zip(AC3G_GRID_CELLS['lats'], AC3G_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                ac3g_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['AC3G'] = np.nanmean(ac3g_gpp_values)
-            print(f"  AC3G: {obs_gpp_regional_wecann['AC3G']:.4f} gC m-2 day-1")
-        
-        # Handle C3G separately using specific grid cells
-        if C3G_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for C3G grid cells...")
-            c3g_gpp_values = []
-            for lat, lon in zip(C3G_GRID_CELLS['lats'], C3G_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c3g_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['C3G'] = np.nanmean(c3g_gpp_values)
-            print(f"  C3G: {obs_gpp_regional_wecann['C3G']:.4f} gC m-2 day-1")
-        
-        # Handle C4 separately using specific grid cells
-        if C4_GRID_CELLS is not None:
-            print(f"\n  Extracting WECANN GPP for C4 grid cells...")
-            c4_gpp_values = []
-            for lat, lon in zip(C4_GRID_CELLS['lats'], C4_GRID_CELLS['lons']):
-                gpp_val = ds_obs_gpp_wecann[gpp_var].sel(lat=lat, lon=lon, method='nearest').mean(skipna=True).values
-                c4_gpp_values.append(float(gpp_val))
-            obs_gpp_regional_wecann['C4'] = np.nanmean(c4_gpp_values)
-            print(f"  C4: {obs_gpp_regional_wecann['C4']:.4f} gC m-2 day-1")
-        
-        ds_obs_gpp_wecann.close()
-        
-except Exception as e:
-    print(f"  ERROR reading WECANN GPP data: {str(e)}")
-    for region in REGIONS:
-        obs_gpp_regional_wecann[region] = np.nan
+# Print summary of which grid cells were extracted
+print(f"\nGrid cell extraction summary:")
+print(f"  BDT_GRID_CELLS: {'Extracted' if BDT_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+print(f"  BET_GRID_CELLS: {'Extracted' if BET_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+print(f"  ENT_GRID_CELLS: {'Extracted' if ENT_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+print(f"  AC3G_GRID_CELLS: {'Extracted' if AC3G_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+print(f"  C3G_GRID_CELLS: {'Extracted' if C3G_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+print(f"  C4_GRID_CELLS: {'Extracted' if C4_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
 
 # Unit conversion factor for FATES_GPP: kgC m-2 s-1 to gC m-2 day-1
 # kgC to gC: multiply by 1000
@@ -731,54 +229,64 @@ except Exception as e:
 GPP_CONVERSION_FACTOR = 1000.0 * 86400.0
 print(f"\nGPP unit conversion factor (kgC m-2 s-1 to gC m-2 day-1): {GPP_CONVERSION_FACTOR}")
 
-# Read data for each region
-data = {}
+# Convert GPP and NPP units in the already-loaded data
+print("\nConverting GPP and NPP units to gC m-2 day-1...")
+print("\nConverting GPP and NPP units to gC m-2 day-1...")
 for region in REGIONS:
-    # Try new naming convention first, then fall back to old
-    print('CSV_DIR:', CSV_DIR)
-    csv_file = CSV_DIR / f"ensemble_data_{YEAR_RANGE}_{region}.csv"
-    print('csv_file:', csv_file)
+    if region not in data:
+        continue
     
-    if csv_file.exists():
-        data[region] = pd.read_csv(csv_file)
-        print(f"\nLoaded data for {region}: {len(data[region])} ensemble members")
-        print(f"Columns: {list(data[region].columns)}")
-        
-        # Convert FATES_GPP variables from kgC m-2 s-1 to gC m-2 day-1
-        gpp_vars_to_convert = ['FATES_GPP_PPE_V1', 'FATES_GPP_PPE_2000_V1']
-        for gpp_var in gpp_vars_to_convert:
-            if gpp_var in data[region].columns:
-                data[region][gpp_var] = data[region][gpp_var] * GPP_CONVERSION_FACTOR
-                print(data[region][gpp_var].max)
-                print(f"  Converted {gpp_var} to gC m-2 day-1")
-        
-        # Convert FATES_NPP variables from kgC m-2 s-1 to gC m-2 day-1 (same units as GPP for CUE calculation)
-        npp_vars_to_convert = ['FATES_NPP_PPE_V1', 'FATES_NPP_PPE_2000_V1']
-        for npp_var in npp_vars_to_convert:
-            if npp_var in data[region].columns:
-                data[region][npp_var] = data[region][npp_var] * GPP_CONVERSION_FACTOR
-                print(f"  Converted {npp_var} to gC m-2 day-1")
-    else:
-        print(f"\nWARNING: File not found: {csv_file}")
+    # Convert FATES_GPP variables from kgC m-2 s-1 to gC m-2 day-1
+    gpp_vars_to_convert = ['FATES_GPP_PPE_V1', 'FATES_GPP_PPE_2000_V1']
+    for gpp_var in gpp_vars_to_convert:
+        if gpp_var in data[region].columns:
+            data[region][gpp_var] = data[region][gpp_var] * GPP_CONVERSION_FACTOR
+            print(f"  Converted {gpp_var} for {region} to gC m-2 day-1")
+    
+    # Convert FATES_NPP variables from kgC m-2 s-1 to gC m-2 day-1 (same units as GPP for CUE calculation)
+    npp_vars_to_convert = ['FATES_NPP_PPE_V1', 'FATES_NPP_PPE_2000_V1']
+    for npp_var in npp_vars_to_convert:
+        if npp_var in data[region].columns:
+            data[region][npp_var] = data[region][npp_var] * GPP_CONVERSION_FACTOR
+            print(f"  Converted {npp_var} for {region} to gC m-2 day-1")
 
 # Helper function to get the appropriate LAI column name for a region
-def get_lai_column(region):
+def get_lai_column(region, df=None):
     """
     Returns the appropriate LAI column for a given region.
     For ENTs (PFT 2), use summer LAI (months 6, 7, 8).
     For other regions, use regular LAI.
-    Always uses 2000 data (PPE_2000_V1).
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available.
     
     Args:
         region: Region name (e.g., 'ENTs', 'BDTs', 'north_65')
+        df: Optional dataframe to check for column availability
     
     Returns:
-        Column name string (e.g., 'fates_lai_summer_PPE_2000_V1' or 'FATES_LAI_PPE_2000_V1')
+        Column name string (e.g., 'fates_lai_summer_PPE_2000_V1' or 'FATES_LAI_PPE_V1')
     """
     if region == 'ENTs':
-        return 'fates_lai_summer_PPE_2000_V1'
+        # Try 2000 version first, then V1 version
+        col_2000 = 'fates_lai_summer_PPE_2000_V1'
+        col_v1 = 'fates_lai_summer_PPE_V1'
+        if df is not None:
+            if col_2000 in df.columns:
+                return col_2000
+            elif col_v1 in df.columns:
+                return col_v1
+        # If no df provided, try 2000 first
+        return col_2000
     else:
-        return 'FATES_LAI_PPE_2000_V1'
+        # Try 2000 version first, then V1 version
+        col_2000 = 'FATES_LAI_PPE_2000_V1'
+        col_v1 = 'FATES_LAI_PPE_V1'
+        if df is not None:
+            if col_2000 in df.columns:
+                return col_2000
+            elif col_v1 in df.columns:
+                return col_v1
+        # If no df provided, try 2000 first
+        return col_2000
 
 # Helper function to get LAI label for plots
 def get_lai_label(region):
@@ -839,6 +347,12 @@ for region in REGIONS:
     
     print(f"\nCreating GPP plots for {region.replace('_', ' ').title()}")
     
+    # Debug: Check observational data
+    if region in obs_gpp_regional:
+        print(f"  FLUXCOM GPP for {region}: {obs_gpp_regional[region]:.4f} gC m-2 day-1")
+    if region in obs_gpp_regional_wecann:
+        print(f"  WECANN GPP for {region}: {obs_gpp_regional_wecann[region]:.4f} gC m-2 day-1")
+    
     # Clean data - remove rows with NaN in parameters or GPP
     df_clean = df.dropna(subset=params + [gpp_col])
     
@@ -850,20 +364,35 @@ for region in REGIONS:
     X = df_clean[params].values
     y = df_clean[gpp_col].values
     
-    # Train Linear Regression emulator
-    print(f"  Training emulator on {len(df_clean)} ensemble members...")
+    # Get LAI data for coloring
+    lai_col = get_lai_column(region, df_clean)
+    if lai_col in df_clean.columns:
+        y_lai = df_clean[lai_col].values
+        print(f"  Using {lai_col} for coloring")
+    else:
+        print(f"  WARNING: LAI column not available, using GPP values for coloring")
+        y_lai = y  # Fallback to GPP if LAI not available
+    
+    # Train Linear Regression emulator for GPP
+    print(f"  Training GPP emulator on {len(df_clean)} ensemble members...")
     lr = LinearRegression()
     lr.fit(X, y)
+    
+    # Train LAI emulator if LAI data is available
+    if lai_col in df_clean.columns:
+        lr_lai = LinearRegression()
+        lr_lai.fit(X, y_lai)
+        print(f"  Training LAI emulator...")
     
     # Evaluate emulator skill
     y_pred_train = lr.predict(X)
     r2 = 1 - np.sum((y - y_pred_train)**2) / np.sum((y - y.mean())**2)
     rmse = np.sqrt(np.mean((y - y_pred_train)**2))
-    print(f"  Emulator R²: {r2:.4f}")
-    print(f"  Emulator RMSE: {rmse:.4f}")
+    print(f"  GPP Emulator R²: {r2:.4f}")
+    print(f"  GPP Emulator RMSE: {rmse:.4f}")
     
     # Generate Latin Hypercube samples for emulator predictions
-    n_samples = 1000
+    n_samples = 2000
     sampler = qmc.LatinHypercube(d=len(params))
     sample = sampler.random(n=n_samples)
     
@@ -875,8 +404,69 @@ for region in REGIONS:
     # Predict GPP for LHS samples
     y_lhs_pred = lr.predict(lhs_samples)
     
+    # Predict LAI for LHS samples if LAI emulator is available
+    if lai_col in df_clean.columns:
+        y_lai_lhs_pred = lr_lai.predict(lhs_samples)
+        print(f"  LAI range: {y_lai.min():.4f} to {y_lai.max():.4f}")
+        print(f"  LHS predicted LAI range: {y_lai_lhs_pred.min():.4f} to {y_lai_lhs_pred.max():.4f}")
+    else:
+        y_lai_lhs_pred = y_lhs_pred  # Fallback to GPP
+    
     print(f"  GPP range: {y.min():.4f} to {y.max():.4f}")
     print(f"  LHS predicted GPP range: {y_lhs_pred.min():.4f} to {y_lhs_pred.max():.4f}")
+    
+    # Debug: Print observation values for this region
+    if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
+        print(f"  Will plot FLUXCOM GPP horizontal line at: {obs_gpp_regional[region]:.4f}")
+    if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
+        print(f"  Will plot WECANN GPP horizontal line at: {obs_gpp_regional_wecann[region]:.4f}")
+    
+    # Identify emulator samples within LAI boundaries
+    lai_within_bounds_mask = np.zeros(len(y_lai_lhs_pred), dtype=bool)
+    if lai_col in df_clean.columns:
+        # For ENTs, use annual maximum LAI values
+        if region == 'ENTs':
+            obs_lai_modis_max = obs_lai_regional_annual_max_ent.get(region, np.nan)
+            obs_lai_avhrr_max = obs_lai_regional_annual_max_avhrr_ent.get(region, np.nan)
+            
+            if not np.isnan(obs_lai_modis_max) and not np.isnan(obs_lai_avhrr_max):
+                # Define boundaries as min and max of the two annual maximum observations
+                lai_min = min(obs_lai_modis_max, obs_lai_avhrr_max)
+                lai_max = max(obs_lai_modis_max, obs_lai_avhrr_max)
+                lai_within_bounds_mask = (y_lai_lhs_pred >= lai_min) & (y_lai_lhs_pred <= lai_max)
+                n_within_bounds = np.sum(lai_within_bounds_mask)
+                print(f"  LAI boundaries (using annual max): [{lai_min:.4f}, {lai_max:.4f}]")
+                print(f"  Emulator samples within LAI bounds: {n_within_bounds}/{len(y_lai_lhs_pred)}")
+        else:
+            # For other regions, use regular LAI observations
+            obs_lai_modis = obs_lai_regional.get(region, np.nan)
+            obs_lai_avhrr_val = obs_lai_regional_avhrr.get(region, np.nan)
+            
+            if not np.isnan(obs_lai_modis) and not np.isnan(obs_lai_avhrr_val):
+                # Define boundaries as min and max of the two observations
+                lai_min = min(obs_lai_modis, obs_lai_avhrr_val)
+                lai_max = max(obs_lai_modis, obs_lai_avhrr_val)
+                lai_within_bounds_mask = (y_lai_lhs_pred >= lai_min) & (y_lai_lhs_pred <= lai_max)
+                n_within_bounds = np.sum(lai_within_bounds_mask)
+                print(f"  LAI boundaries: [{lai_min:.4f}, {lai_max:.4f}]")
+                print(f"  Emulator samples within LAI bounds: {n_within_bounds}/{len(y_lai_lhs_pred)}")
+    
+    # Identify emulator samples within BOTH LAI and GPP boundaries (black dots)
+    gpp_lai_within_bounds_mask = np.zeros(len(y_lai_lhs_pred), dtype=bool)
+    if np.any(lai_within_bounds_mask):
+        obs_gpp_fluxcom = obs_gpp_regional.get(region, np.nan)
+        obs_gpp_wecann_val = obs_gpp_regional_wecann.get(region, np.nan)
+        
+        if not np.isnan(obs_gpp_fluxcom) and not np.isnan(obs_gpp_wecann_val):
+            # Define GPP boundaries as min and max of the two observations
+            gpp_min = min(obs_gpp_fluxcom, obs_gpp_wecann_val)
+            gpp_max = max(obs_gpp_fluxcom, obs_gpp_wecann_val)
+            # Only consider samples that are already within LAI bounds
+            gpp_within_bounds = (y_lhs_pred >= gpp_min) & (y_lhs_pred <= gpp_max)
+            gpp_lai_within_bounds_mask = lai_within_bounds_mask & gpp_within_bounds
+            n_within_both = np.sum(gpp_lai_within_bounds_mask)
+            print(f"  GPP boundaries: [{gpp_min:.4f}, {gpp_max:.4f}]")
+            print(f"  Emulator samples within BOTH LAI and GPP bounds: {n_within_both}/{len(y_lai_lhs_pred)}")
     
     # Store parameter samples for plotting
     param_samples = {}
@@ -890,9 +480,10 @@ for region in REGIONS:
     n_rows, n_cols = calculate_subplot_grid(len(params))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
     axes = axes.flatten() if len(params) > 1 else [axes]
-    fig.suptitle(f'GPP{gpp_time_label} vs Parameters - {region.replace("_", " ").title()}', 
+    fig.suptitle(f'GPP{gpp_time_label} vs Parameters (colored by LAI) - {region.replace("_", " ").title()}', 
                  fontsize=16, fontweight='bold')
     
+    scatter_emul = None  # Initialize outside loop
     for idx, param in enumerate(params):
         ax = axes[idx]
         
@@ -901,19 +492,43 @@ for region in REGIONS:
                    transform=ax.transAxes)
             continue
         
-        # Plot emulator predictions as small grey dots in background
-        ax.scatter(param_samples[param], param_predictions[param], s=10, alpha=0.3, 
-                  c='grey', edgecolors='none', zorder=1, label='Emulator predictions')
+        # Plot emulator predictions NOT within LAI bounds colored by predicted LAI
+        if np.any(~lai_within_bounds_mask):
+            scatter_emul = ax.scatter(param_samples[param][~lai_within_bounds_mask], 
+                      param_predictions[param][~lai_within_bounds_mask], s=15, alpha=0.6, 
+                      c=y_lai_lhs_pred[~lai_within_bounds_mask], cmap='YlGn', edgecolors='none', zorder=1, 
+                      vmin=y_lai.min(), vmax=y_lai.max(),
+                      label='Emulator predictions')
         
-        # Plot GPP(2000) (blue points) on top
-        scatter = ax.scatter(df[param], df[gpp_col], s=100, alpha=0.6, 
-                           c='blue', edgecolors='black', linewidth=0.5, zorder=2, label=f'Model GPP{gpp_time_label}')
+        # Plot emulator predictions WITHIN LAI bounds only (not GPP) in pink
+        lai_only_mask = lai_within_bounds_mask & ~gpp_lai_within_bounds_mask
+        if np.any(lai_only_mask):
+            ax.scatter(param_samples[param][lai_only_mask], 
+                      param_predictions[param][lai_only_mask], s=15, alpha=0.7, 
+                      c='hotpink', edgecolors='none', zorder=1.5,
+                      label='Within LAI bounds')
+        
+        # Plot emulator predictions WITHIN BOTH LAI and GPP bounds in black
+        if np.any(gpp_lai_within_bounds_mask):
+            ax.scatter(param_samples[param][gpp_lai_within_bounds_mask], 
+                      param_predictions[param][gpp_lai_within_bounds_mask], s=20, alpha=0.8, 
+                      c='black', edgecolors='none', zorder=1.6,
+                      label='Within LAI & GPP bounds')
+        
+        # Plot GPP(2000) colored by actual LAI on top
+        ax.scatter(df[param], df[gpp_col], s=100, alpha=0.9, 
+                   c=df[lai_col] if lai_col in df.columns else df[gpp_col], 
+                   cmap='YlGn', edgecolors='black', linewidth=1.5, zorder=2, 
+                   vmin=y_lai.min(), vmax=y_lai.max(),
+                   label=f'Model GPP{gpp_time_label}')
         
         # Add observed GPP as horizontal line
         if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
+            print(f"  Adding FLUXCOM horizontal line at y={obs_gpp_regional[region]:.4f}")
             ax.axhline(obs_gpp_regional[region], color='darkred', linestyle='--', 
                       linewidth=2, alpha=0.8, zorder=3, label=f'FLUXCOM GPP: {obs_gpp_regional[region]:.2f}')
         if region in obs_gpp_regional_wecann and not np.isnan(obs_gpp_regional_wecann[region]):
+            print(f"  Adding WECANN horizontal line at y={obs_gpp_regional_wecann[region]:.4f}")
             ax.axhline(obs_gpp_regional_wecann[region], color='coral', linestyle=':', 
                       linewidth=2, alpha=0.8, zorder=3, label=f'WECANN GPP: {obs_gpp_regional_wecann[region]:.2f}')
         
@@ -921,15 +536,17 @@ for region in REGIONS:
         for _, row_data in df.iterrows():
             ax.annotate(f"n{int(row_data['ensemble_member']):02d}", 
                        (row_data[param], row_data[gpp_col]),
-                       fontsize=7, ha='center', va='bottom', color='blue')
+                       fontsize=7, ha='center', va='bottom',
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
+                                edgecolor='none', alpha=0.7))
         
         ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=11, fontweight='bold')
-        ax.set_ylabel(f'GPP{gpp_time_label} [gC m⁻² day⁻¹]', fontsize=11, fontweight='bold', color='blue')
+        ax.set_ylabel(f'GPP{gpp_time_label} [gC m⁻² day⁻¹]', fontsize=11, fontweight='bold')
         
         # Create legend
-        legend_handles = [scatter]
-        legend_labels = [f'Model GPP{gpp_time_label}']
         from matplotlib.lines import Line2D
+        legend_handles = []
+        legend_labels = []
         if region in obs_gpp_regional and not np.isnan(obs_gpp_regional[region]):
             fluxcom_line = Line2D([0], [0], color='darkred', linestyle='--', linewidth=2, alpha=0.8)
             legend_handles.append(fluxcom_line)
@@ -938,20 +555,93 @@ for region in REGIONS:
             wecann_line = Line2D([0], [0], color='coral', linestyle=':', linewidth=2, alpha=0.8)
             legend_handles.append(wecann_line)
             legend_labels.append(f'WECANN GPP: {obs_gpp_regional_wecann[region]:.2f}')
-        ax.legend(legend_handles, legend_labels, loc='best', fontsize=9)
+        if legend_handles:
+            ax.legend(legend_handles, legend_labels, loc='best', fontsize=9)
         
         ax.grid(True, alpha=0.3)
+    
+    # Add colorbar for LAI values
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
+    if scatter_emul is not None:
+        cbar_ax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
+        cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
+        cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
     
     plt.tight_layout()
     output_file = OUTPUT_DIR_GPP / f"gpp_vs_parameters_{region}.png"
     fig.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"  Saved plot: {output_file}")
     plt.close(fig)
+    
+    # Create parameter space visualization (slatop vs vcmax25top) showing emulator space and constrained regions
+    if 'fates_leaf_slatop' in params and 'fates_leaf_vcmax25top' in params:
+        print(f"  Creating parameter space visualization (slatop vs vcmax25top)...")
+        
+        slatop_idx = params.index('fates_leaf_slatop')
+        vcmax_idx = params.index('fates_leaf_vcmax25top')
+        
+        fig_param_space, ax_space = plt.subplots(1, 1, figsize=(10, 8))
+        
+        # Plot all emulator samples (gray)
+        ax_space.scatter(lhs_samples[:, slatop_idx], lhs_samples[:, vcmax_idx], 
+                        s=15, alpha=0.3, c='lightgray', edgecolors='none', 
+                        label='All emulator space', zorder=1)
+        
+        # Plot samples within LAI bounds (pink)
+        lai_only_mask = lai_within_bounds_mask & ~gpp_lai_within_bounds_mask
+        if np.any(lai_only_mask):
+            ax_space.scatter(lhs_samples[lai_only_mask, slatop_idx], 
+                           lhs_samples[lai_only_mask, vcmax_idx],
+                           s=25, alpha=0.7, c='hotpink', edgecolors='none',
+                           label=f'Within LAI bounds ({np.sum(lai_only_mask)} samples)', zorder=2)
+        
+        # Plot samples within BOTH LAI and GPP bounds (black)
+        if np.any(gpp_lai_within_bounds_mask):
+            ax_space.scatter(lhs_samples[gpp_lai_within_bounds_mask, slatop_idx], 
+                           lhs_samples[gpp_lai_within_bounds_mask, vcmax_idx],
+                           s=30, alpha=0.9, c='black', edgecolors='yellow', linewidth=0.5,
+                           label=f'Within LAI & GPP bounds ({np.sum(gpp_lai_within_bounds_mask)} samples)', zorder=3)
+        
+        # Plot actual ensemble members
+        ax_space.scatter(df_clean['fates_leaf_slatop'], df_clean['fates_leaf_vcmax25top'],
+                        s=150, alpha=0.9, c='red', edgecolors='darkred', linewidth=2,
+                        marker='*', label='Ensemble members', zorder=4)
+        
+        # Add ensemble labels
+        for _, row in df_clean.iterrows():
+            ax_space.annotate(f"n{int(row['ensemble_member']):02d}",
+                            (row['fates_leaf_slatop'], row['fates_leaf_vcmax25top']),
+                            fontsize=9, ha='center', va='bottom', fontweight='bold',
+                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                                     edgecolor='darkred', alpha=0.8))
+        
+        ax_space.set_xlabel('fates_leaf_slatop', fontsize=13, fontweight='bold')
+        ax_space.set_ylabel('fates_leaf_vcmax25top', fontsize=13, fontweight='bold')
+        ax_space.set_title(f'Parameter Space: Slatop vs Vcmax25top - {region.replace("_", " ").title()}\\n' +
+                          f'Constrained by LAI and GPP observations',
+                          fontsize=14, fontweight='bold')
+        ax_space.legend(loc='best', fontsize=10, framealpha=0.9)
+        ax_space.grid(True, alpha=0.3)
+        
+        output_file_param = OUTPUT_DIR_GPP / f"parameter_space_slatop_vcmax_{region}.png"
+        fig_param_space.savefig(output_file_param, dpi=300, bbox_inches='tight')
+        print(f"  Saved parameter space plot: {output_file_param}")
+        plt.close(fig_param_space)
+    else:
+        print(f"  Skipping parameter space plot (requires both slatop and vcmax25top)")
 
-# Create VEGC(2000) vs LAI(2000) scatter plots
+# Create plots of NPP(2000) vs parameters with emulator (colored by LAI)
 print("\n" + "="*60)
-print("Creating VEGC(2000) vs LAI(2000) plots...")
+print("Creating NPP(2000) vs parameter plots with emulator (colored by LAI)...")
 print("="*60)
+
+# Determine NPP column name based on ensemble
+if ens_n == 1:
+    npp_col = 'FATES_NPP_PPE_2000_V1'
+    npp_time_label = '(2000)'
+else:
+    npp_col = 'FATES_NPP_PPE_V1'
+    npp_time_label = ''
 
 for region in REGIONS:
     if region not in data:
@@ -959,346 +649,126 @@ for region in REGIONS:
     
     df = data[region]
     
-    # Get appropriate LAI column for this region
-    lai_col = get_lai_column(region)
-    lai_label = get_lai_label(region)
-    vegc_col = 'FATES_VEGC_PPE_2000_V1'
-    
-    if vegc_col not in df.columns or lai_col not in df.columns:
-        print(f"\nWARNING: Missing required columns for {region}")
+    if npp_col not in df.columns:
+        print(f"\nWARNING: Missing {npp_col} column for {region}")
         continue
     
-    print(f"\nCreating plot for {region.replace('_', ' ').title()}")
+    print(f"\nCreating NPP plots for {region.replace('_', ' ').title()}")
     
-    # Create scatter plot: VEGC vs LAI
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # Clean data - remove rows with NaN in parameters or NPP
+    df_clean = df.dropna(subset=params + [npp_col])
     
-    # Plot all members with ensemble numbers as labels
-    scatter = ax.scatter(df[vegc_col], df[lai_col],
-                        s=100, alpha=0.6, c='blue', edgecolors='black', linewidth=0.5)
-    
-    # Add ensemble member labels
-    for idx, row in df.iterrows():
-        ax.annotate(f"n{int(row['ensemble_member']):02d}", 
-                   (row[vegc_col], row[lai_col]),
-                   fontsize=8, ha='center', va='bottom')
-    
-    ax.set_xlabel('VEGC(2000) [kgC/m²]', fontsize=12, fontweight='bold')
-    ax.set_ylabel(f'{lai_label}(2000) [m²/m²]', fontsize=12, fontweight='bold')
-    ax.set_title(f'VEGC(2000) vs {lai_label}(2000) ({YEAR_RANGE}) - {region.replace("_", " ").title()}', 
-                fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3)
-    
-    output_file = OUTPUT_DIR_VEGC_LAI / f"vegc_vs_lai_2000_{YEAR_RANGE}_{region}.png"
-    fig.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"  Saved plot: {output_file}")
-    plt.close(fig)
-
-# Create plots of VEGC(2000) and LAI(2000) vs parameters (on same axes)
-print("\n" + "="*60)
-print("Creating VEGC(2000) and LAI(2000) vs parameters plots...")
-print("="*60)
-
-for region in REGIONS:
-    if region not in data:
+    if len(df_clean) < 3:
+        print(f"  WARNING: Not enough clean data points ({len(df_clean)}) for emulator. Skipping.")
         continue
     
-    df = data[region]
+    # Prepare training data for emulator
+    X = df_clean[params].values
+    y = df_clean[npp_col].values
     
-    # Get appropriate LAI column for this region
-    lai_col = get_lai_column(region, 'PPE_2000_V1')
-    lai_label = get_lai_label(region)
+    # Get LAI data for coloring
+    lai_col = get_lai_column(region, df_clean)
+    if lai_col in df_clean.columns:
+        y_lai = df_clean[lai_col].values
+        print(f"  Using {lai_col} for coloring")
+    else:
+        print(f"  WARNING: LAI column not available, using NPP values for coloring")
+        y_lai = y  # Fallback to NPP if LAI not available
     
-    if 'FATES_VEGC_PPE_2000_V1' not in df.columns or lai_col not in df.columns:
-        print(f"\nWARNING: Missing required columns for {region}")
-        continue
+    # Train Linear Regression emulator for NPP
+    print(f"  Training NPP emulator on {len(df_clean)} ensemble members...")
+    lr_npp = LinearRegression()
+    lr_npp.fit(X, y)
     
-    print(f"\nCreating dual-axis plots for {region.replace('_', ' ').title()}")
+    # Train LAI emulator if LAI data is available
+    lr_lai = None
+    if lai_col in df_clean.columns:
+        print(f"  Training LAI emulator for coloring...")
+        lr_lai = LinearRegression()
+        lr_lai.fit(X, y_lai)
     
-    # Create dynamic subplot grid based on number of parameters with dual y-axes
+    # Calculate R² and RMSE
+    y_pred = lr_npp.predict(X)
+    r2 = lr_npp.score(X, y)
+    rmse = np.sqrt(np.mean((y - y_pred)**2))
+    
+    print(f"  NPP Emulator R²: {r2:.4f}")
+    print(f"  NPP Emulator RMSE: {rmse:.4f}")
+    print(f"  NPP range: {y.min():.4f} to {y.max():.4f}")
+    print(f"  LHS predicted NPP range: {y_pred.min():.4f} to {y_pred.max():.4f}")
+    
+    # Generate Latin Hypercube samples for emulator predictions
+    n_samples = 2000 if len(params) >= 4 else 1000
+    lhs_samples = {}
+    for param in params:
+        param_min = df_clean[param].min()
+        param_max = df_clean[param].max()
+        lhs_samples[param] = np.random.uniform(param_min, param_max, n_samples)
+    
+    X_lhs = np.column_stack([lhs_samples[param] for param in params])
+    y_lhs_pred = lr_npp.predict(X_lhs)
+    
+    # Predict LAI for LHS samples (for coloring)
+    if lr_lai is not None:
+        y_lai_lhs_pred = lr_lai.predict(X_lhs)
+    else:
+        y_lai_lhs_pred = y_lhs_pred  # Fallback
+    
+    # Create plots
     n_rows, n_cols = calculate_subplot_grid(len(params))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
     axes = axes.flatten() if len(params) > 1 else [axes]
-    fig.suptitle(f'VEGC(2000) and {lai_label}(2000) vs Parameters ({YEAR_RANGE}) - {region.replace("_", " ").title()}', 
-                 fontsize=16, fontweight='bold')
+    fig.suptitle(f'NPP{npp_time_label} vs Parameters with Emulator (Colored by LAI) - {region.replace("_", " ").title()} ({YEAR_RANGE})',
+                fontsize=16, fontweight='bold')
     
-    for idx, param in enumerate(params):
-        ax1 = axes[idx]
-        
-        if param not in df.columns:
-            ax1.text(0.5, 0.5, f'{param}\nNot found', ha='center', va='center', 
-                   transform=ax1.transAxes)
-            continue
-        
-        # Plot VEGC on left y-axis
-        color_vegc = 'tab:orange'
-        ax1.scatter(df[param], df[vegc_col], 
-                   color=color_vegc, s=80, alpha=0.7, marker='o', label='VEGC(2000)')
-        ax1.set_xlabel(param.replace('fates_', ''), fontsize=11, fontweight='bold')
-        ax1.set_ylabel('VEGC(2000) [kgC/m²]', color=color_vegc, fontsize=11, fontweight='bold')
-        ax1.tick_params(axis='y', labelcolor=color_vegc)
-        
-        # Create second y-axis for LAI
-        ax2 = ax1.twinx()
-        color_lai = 'tab:green'
-        ax2.scatter(df[param], df[lai_col], 
-                   color=color_lai, s=80, alpha=0.7, marker='s', label=f'{lai_label}(2000)')
-        ax2.set_ylabel(f'{lai_label}(2000) [m²/m²]', color=color_lai, fontsize=11, fontweight='bold')
-        ax2.tick_params(axis='y', labelcolor=color_lai)
-        
-        # Add observed LAI as horizontal line
-        if region in obs_lai_regional and not np.isnan(obs_lai_regional[region]):
-            ax2.axhline(obs_lai_regional[region], color='darkgreen', linestyle='--', 
-                       linewidth=2, alpha=0.8, label=f'MODIS {lai_label}: {obs_lai_regional[region]:.2f}')
-        if region in obs_lai_regional_avhrr and not np.isnan(obs_lai_regional_avhrr[region]):
-            ax2.axhline(obs_lai_regional_avhrr[region], color='limegreen', linestyle=':', 
-                       linewidth=2, alpha=0.8, label=f'AVHRR {lai_label}: {obs_lai_regional_avhrr[region]:.2f}')
-        
-        # Add ensemble member labels
-        for idx_member, row in df.iterrows():
-            # Use VEGC y-values for label positioning
-            ax1.annotate(f"n{int(row['ensemble_member']):02d}",
-                        (row[param], row['FATES_VEGC_PPE_2000_V1']),
-                        xytext=(0, 8), textcoords='offset points',
-                        fontsize=9, ha='center', va='bottom', fontweight='bold',
-                        color='black', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
-                                                 edgecolor='none', alpha=0.7))
-        
-        ax1.grid(True, alpha=0.3)
-        
-        # Combined legend (using ax2 to get all elements including the horizontal line)
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax2.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=9)
-    
-    plt.tight_layout()
-    output_file = OUTPUT_DIR_VEGC_LAI / f"vegc_and_lai_vs_parameters_{YEAR_RANGE}_{region}.png"
-    fig.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"  Saved plot: {output_file}")
-    plt.close(fig)
-
-# Create plots of VEGC(2000)/LAI(2000) ratio vs parameters
-print("\n" + "="*60)
-print(f"Creating VEGC(2000)/LAI(2000) ratio vs parameter plots ({YEAR_RANGE})...")
-print("="*60)
-
-for region in REGIONS:
-    if region not in data:
-        continue
-    
-    df = data[region]
-    
-    # Get appropriate LAI column for this region
-    lai_col = get_lai_column(region, 'PPE_2000_V1')
-    lai_label = get_lai_label(region)
-    
-    # Check if VEGC columns exist for 2000 ensemble
-    if 'FATES_VEGC_PPE_2000_V1' not in df.columns or lai_col not in df.columns:
-        print(f"\nWARNING: Missing VEGC or LAI columns for 2000 ensemble in {region}")
-        continue
-    
-    # Calculate ratio for 2000 ensemble
-    df['VEGC_LAI_ratio_2000'] = df['FATES_VEGC_PPE_2000_V1'] / df[lai_col]
-    
-    print(f"\nCreating VEGC(2000)/{lai_label}(2000) ratio plots for {region.replace('_', ' ').title()}")
-    
-    # Remove any rows with NaN
-    df_clean_vegc = df.dropna(subset=params + ['FATES_VEGC_PPE_2000_V1', lai_col])
-    print(f"  After removing NaN: {len(df_clean_vegc)} rows")
-    
-    if len(df_clean_vegc) < 3:
-        print(f"\n  WARNING: Only {len(df_clean_vegc)} training points! Skipping.")
-        continue
-    
-    X_vegc = df_clean_vegc[params].values
-    y_vegc_2000 = df_clean_vegc['VEGC_LAI_ratio_2000'].values
-    
-    # Train Linear Regression model for ratio
-    lr_ratio = LinearRegression()
-    lr_ratio.fit(X_vegc, y_vegc_2000)
-    
-    # Check training skill
-    y_pred_train = lr_ratio.predict(X_vegc)
-    train_score = lr_ratio.score(X_vegc, y_vegc_2000)
-    rmse = np.sqrt(np.mean((y_vegc_2000 - y_pred_train)**2))
-    
-    print(f"\n  Linear Regression Results:")
-    print(f"    R² score: {train_score:.4f}")
-    print(f"    RMSE: {rmse:.4f}")
-    
-    # Create emulator skill plot
-    fig_skill, ax_skill = plt.subplots(figsize=(8, 8))
-    
-    ax_skill.scatter(y_vegc_2000, y_pred_train, s=100, alpha=0.7, c='blue', edgecolors='black')
-    
-    # Add ensemble member labels
-    for i in range(len(y_vegc_2000)):
-        ax_skill.annotate(f"n{int(df_clean_vegc.iloc[i]['ensemble_member']):02d}",
-                         (y_vegc_2000[i], y_pred_train[i]),
-                         fontsize=8, ha='center', va='bottom')
-    
-    # Add 1:1 line
-    min_val = min(y_vegc_2000.min(), y_pred_train.min())
-    max_val = max(y_vegc_2000.max(), y_pred_train.max())
-    ax_skill.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='1:1 line')
-    
-    ax_skill.set_xlabel('Observed VEGC(2000)/LAI(2000)', fontsize=12, fontweight='bold')
-    ax_skill.set_ylabel('Predicted VEGC(2000)/LAI(2000)', fontsize=12, fontweight='bold')
-    ax_skill.set_title(f'Emulator Skill ({YEAR_RANGE}) - {region.replace("_", " ").title()}', 
-                      fontsize=14, fontweight='bold')
-    ax_skill.legend()
-    ax_skill.grid(True, alpha=0.3)
-    ax_skill.set_aspect('equal')
-    
-    output_file_skill = OUTPUT_DIR_VEGC_LAI / f"emulator_skill_{YEAR_RANGE}_{region}.png"
-    fig_skill.savefig(output_file_skill, dpi=300, bbox_inches='tight')
-    print(f"  Saved emulator skill plot: {output_file_skill}")
-    plt.close(fig_skill)
-    
-    # Generate LHS samples
-    param_bounds = np.array([[df_clean_vegc[param].min(), df_clean_vegc[param].max()] for param in params])
-    sampler_vegc = qmc.LatinHypercube(d=len(params), seed=43)
-    lhs_samples_unit = sampler_vegc.random(n=2000)
-    lhs_samples_vegc = qmc.scale(lhs_samples_unit, param_bounds[:, 0], param_bounds[:, 1])
-    
-    # Predict for LHS samples
-    y_vegc_lhs_pred = lr_ratio.predict(lhs_samples_vegc)
-    
-    print(f"\n  VEGC(2000)/LAI(2000) Ratio Statistics:")
-    print(f"    Range: {y_vegc_2000.min():.4f} to {y_vegc_2000.max():.4f}")
-    print(f"    LHS predicted range: {y_vegc_lhs_pred.min():.4f} to {y_vegc_lhs_pred.max():.4f}")
-    
-    # Train emulators for VEGC and LAI separately
-    vegc_values = df_clean_vegc['FATES_VEGC_PPE_2000_V1'].values
-    lai_values = df_clean_vegc[lai_col].values
-    
-    lr_vegc = LinearRegression()
-    lr_vegc.fit(X_vegc, vegc_values)
-    vegc_lhs_pred = lr_vegc.predict(lhs_samples_vegc)
-    
-    lr_lai = LinearRegression()
-    lr_lai.fit(X_vegc, lai_values)
-    lai_lhs_pred = lr_lai.predict(lhs_samples_vegc)
-    
-    # Create 2D parameter space plots: d2bl1 vs l2fr colored by VEGC, LAI, and ratio
-    d2bl1_idx = params.index('fates_allom_d2bl1')
-    l2fr_idx = params.index('fates_allom_l2fr')
-    
-    # Create figure with 3 subplots
-    fig_2d, axes_2d = plt.subplots(1, 3, figsize=(22, 6))
-    
-    # Plot 1: VEGC(2000)
-    scatter_vegc = axes_2d[0].scatter(lhs_samples_vegc[:, d2bl1_idx], lhs_samples_vegc[:, l2fr_idx],
-                                     c=vegc_lhs_pred, s=20, alpha=0.4, cmap='Oranges', 
-                                     edgecolors='none')
-    axes_2d[0].scatter(X_vegc[:, d2bl1_idx], X_vegc[:, l2fr_idx],
-                       c=vegc_values, s=150, alpha=0.9, cmap='Oranges',
-                       edgecolors='black', linewidth=2, marker='o')
-    for i in range(len(X_vegc)):
-        axes_2d[0].annotate(f"n{int(df_clean_vegc.iloc[i]['ensemble_member']):02d}",
-                           (X_vegc[i, d2bl1_idx], X_vegc[i, l2fr_idx]),
-                           fontsize=8, ha='center', va='bottom', fontweight='bold')
-    cbar_vegc = plt.colorbar(scatter_vegc, ax=axes_2d[0])
-    cbar_vegc.set_label('VEGC(2000) [kgC/m²]', fontsize=11, fontweight='bold')
-    axes_2d[0].set_xlabel('fates_allom_d2bl1', fontsize=11, fontweight='bold')
-    axes_2d[0].set_ylabel('fates_allom_l2fr', fontsize=11, fontweight='bold')
-    axes_2d[0].set_title('VEGC(2000)', fontsize=12, fontweight='bold')
-    axes_2d[0].grid(True, alpha=0.3)
-    
-    # Plot 2: LAI(2000)
-    scatter_lai = axes_2d[1].scatter(lhs_samples_vegc[:, d2bl1_idx], lhs_samples_vegc[:, l2fr_idx],
-                                     c=lai_lhs_pred, s=20, alpha=0.4, cmap='YlGn', 
-                                     edgecolors='none')
-    axes_2d[1].scatter(X_vegc[:, d2bl1_idx], X_vegc[:, l2fr_idx],
-                       c=lai_values, s=150, alpha=0.9, cmap='YlGn',
-                       edgecolors='black', linewidth=2, marker='o')
-    for i in range(len(X_vegc)):
-        axes_2d[1].annotate(f"n{int(df_clean_vegc.iloc[i]['ensemble_member']):02d}",
-                           (X_vegc[i, d2bl1_idx], X_vegc[i, l2fr_idx]),
-                           fontsize=8, ha='center', va='bottom', fontweight='bold')
-    cbar_lai = plt.colorbar(scatter_lai, ax=axes_2d[1])
-    cbar_lai.set_label('LAI(2000) [m²/m²]', fontsize=11, fontweight='bold')
-    axes_2d[1].set_xlabel('fates_allom_d2bl1', fontsize=11, fontweight='bold')
-    axes_2d[1].set_ylabel('fates_allom_l2fr', fontsize=11, fontweight='bold')
-    axes_2d[1].set_title('LAI(2000)', fontsize=12, fontweight='bold')
-    axes_2d[1].grid(True, alpha=0.3)
-    
-    # Plot 3: Ratio VEGC(2000)/LAI(2000)
-    scatter_ratio = axes_2d[2].scatter(lhs_samples_vegc[:, d2bl1_idx], lhs_samples_vegc[:, l2fr_idx],
-                                       c=y_vegc_lhs_pred, s=20, alpha=0.4, cmap='plasma', 
-                                       edgecolors='none')
-    axes_2d[2].scatter(X_vegc[:, d2bl1_idx], X_vegc[:, l2fr_idx],
-                       c=y_vegc_2000, s=150, alpha=0.9, cmap='plasma',
-                       edgecolors='black', linewidth=2, marker='o')
-    for i in range(len(X_vegc)):
-        axes_2d[2].annotate(f"n{int(df_clean_vegc.iloc[i]['ensemble_member']):02d}",
-                           (X_vegc[i, d2bl1_idx], X_vegc[i, l2fr_idx]),
-                           fontsize=8, ha='center', va='bottom', fontweight='bold')
-    cbar_ratio = plt.colorbar(scatter_ratio, ax=axes_2d[2])
-    cbar_ratio.set_label('VEGC(2000)/LAI(2000) Ratio', fontsize=11, fontweight='bold')
-    axes_2d[2].set_xlabel('fates_allom_d2bl1', fontsize=11, fontweight='bold')
-    axes_2d[2].set_ylabel('fates_allom_l2fr', fontsize=11, fontweight='bold')
-    axes_2d[2].set_title('VEGC(2000)/LAI(2000)', fontsize=12, fontweight='bold')
-    axes_2d[2].grid(True, alpha=0.3)
-    
-    # Add overall title
-    fig_2d.suptitle(f'Parameter Space: d2bl1 vs l2fr ({YEAR_RANGE}) - {region.replace("_", " ").title()}',
-                   fontsize=14, fontweight='bold', y=1.00)
-    
-    plt.tight_layout()
-    output_file_2d = OUTPUT_DIR_VEGC_LAI / f"parameter_space_d2bl1_l2fr_{YEAR_RANGE}_{region}.png"
-    fig_2d.savefig(output_file_2d, dpi=300, bbox_inches='tight')
-    print(f"  Saved 2D parameter space plot: {output_file_2d}")
-    plt.close(fig_2d)
-    
-    # Create dynamic subplot grid based on number of parameters (ratio vs parameters)
-    n_rows, n_cols = calculate_subplot_grid(len(params))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
-    axes = axes.flatten() if len(params) > 1 else [axes]
-    fig.suptitle(f'VEGC(2000)/LAI(2000) Ratio vs Parameters ({YEAR_RANGE}) - {region.replace("_", " ").title()}', 
-                 fontsize=16, fontweight='bold')
-    
+    scatter_emul = None
     for idx, param in enumerate(params):
         ax = axes[idx]
         
-        if param not in df.columns:
-            ax.text(0.5, 0.5, f'{param}\nNot found', ha='center', va='center', 
-                   transform=ax.transAxes)
-            continue
+        # Plot emulator LHS predictions (colored by LAI)
+        scatter_emul = ax.scatter(lhs_samples[param], y_lhs_pred, c=y_lai_lhs_pred,
+                                 s=10, alpha=0.3, cmap='viridis', vmin=y_lai.min(), vmax=y_lai.max(),
+                                 label='Emulator predictions', zorder=1)
         
-        # Overlay LHS predictions colored by predicted VEGC
-        param_idx = params.index(param)
-        scatter = ax.scatter(lhs_samples_vegc[:, param_idx], y_vegc_lhs_pred, s=20, alpha=0.4, 
-                            c=vegc_lhs_pred, cmap='RdBu_r',
-                            edgecolors='none', label='LHS predictions')
-        
-        # Plot actual data colored by VEGC
-        ax.scatter(df_clean_vegc[param], y_vegc_2000, s=150, alpha=0.9, 
-                  c=vegc_values, cmap='RdBu_r',
-                  edgecolors='black', linewidth=2, label='Ensemble members')
+        # Plot ensemble members (colored by LAI)
+        scatter_ens = ax.scatter(df_clean[param], y, c=y_lai,
+                                s=100, alpha=0.8, cmap='viridis', edgecolors='black', linewidth=1,
+                                vmin=y_lai.min(), vmax=y_lai.max(),
+                                label='Ensemble members', zorder=2)
         
         # Add ensemble member labels
-        for i in range(len(df_clean_vegc)):
-            ax.annotate(f"n{int(df_clean_vegc.iloc[i]['ensemble_member']):02d}",
-                       (df_clean_vegc.iloc[i][param], y_vegc_2000[i]),
-                       xytext=(0, 8), textcoords='offset points',
-                       fontsize=10, ha='center', va='bottom', fontweight='bold',
-                       color='black', bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
-                                                edgecolor='none', alpha=0.7))
+        for _, row_data in df_clean.iterrows():
+            ax.annotate(f"n{int(row_data['ensemble_member']):02d}", 
+                       (row_data[param], row_data[npp_col]),
+                       fontsize=7, ha='center', va='bottom',
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
+                                edgecolor='none', alpha=0.7))
         
-        ax.set_xlabel(param.replace('fates_', ''), fontsize=11, fontweight='bold')
-        ax.set_ylabel('VEGC(2000)/LAI(2000) Ratio', fontsize=11, fontweight='bold')
-        ax.set_title(param.replace('fates_', ''), fontsize=12, fontweight='bold')
-        ax.legend(loc='best', fontsize=9)
+        ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), fontsize=11, fontweight='bold')
+        ax.set_ylabel(f'NPP{npp_time_label} [gC m⁻² day⁻¹]', fontsize=11, fontweight='bold')
+        
+        # Create legend
+        from matplotlib.lines import Line2D
+        legend_handles = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='gray', markersize=8, 
+                   markeredgecolor='black', label='Ensemble members', alpha=0.8),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='gray', markersize=5, 
+                   label='Emulator predictions', alpha=0.3)
+        ]
+        legend_labels = ['Ensemble members', 'Emulator predictions']
+        
+        ax.legend(legend_handles, legend_labels, loc='best', fontsize=9)
         ax.grid(True, alpha=0.3)
-        
-        # Add colorbar for VEGC
-        if idx == 1:  # Add colorbar to upper right subplot
-            cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label('VEGC(2000) [kgC/m²]', fontsize=10, fontweight='bold')
+    
+    # Add colorbar for LAI values
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
+    if scatter_emul is not None:
+        cbar_ax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
+        cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
+        cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
     
     plt.tight_layout()
-    output_file = OUTPUT_DIR_VEGC_LAI / f"vegc_lai_ratio_vs_parameters_{YEAR_RANGE}_{region}.png"
+    output_file = OUTPUT_DIR_NPP / f"npp_vs_parameters_{region}.png"
     fig.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"  Saved plot: {output_file}")
     plt.close(fig)
@@ -1355,7 +825,7 @@ for region in REGIONS:
     df = data[region]
     
     # Get appropriate LAI column for this region
-    lai_col = get_lai_column(region)
+    lai_col = get_lai_column(region, df)
     lai_label = get_lai_label(region)
     
     if lai_col not in df.columns:
@@ -1402,60 +872,24 @@ for region in REGIONS:
         print(f"  MODIS LAI: {obs_lai:.4f}")
     if not np.isnan(obs_lai_avhrr):
         print(f"  AVHRR LAI: {obs_lai_avhrr:.4f}")
-    
-    # Create LAI emulator skill plot
-    fig_skill, ax_skill = plt.subplots(figsize=(8, 8))
-    ax_skill.scatter(y_lai, y_lai_pred_train, s=100, alpha=0.6, c='green', 
-                    edgecolors='black', linewidth=0.5)
-    
-    # Add 1:1 line
-    min_val = min(y_lai.min(), y_lai_pred_train.min())
-    max_val = max(y_lai.max(), y_lai_pred_train.max())
-    ax_skill.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='1:1 line')
-    
-    # Add observational LAI as horizontal and vertical lines
-    if not np.isnan(obs_lai):
-        if region == 'ENTs':
-            ax_skill.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2, 
-                            alpha=0.7, label=f'MODIS Summer {lai_label}: {obs_lai:.2f}')
-            ax_skill.axvline(obs_lai, color='darkgreen', linestyle='--', linewidth=2, alpha=0.7)
-        else:
-            ax_skill.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2, 
-                            alpha=0.7, label=f'MODIS {lai_label}: {obs_lai:.2f}')
-            ax_skill.axvline(obs_lai, color='darkgreen', linestyle='--', linewidth=2, alpha=0.7)
-    if region == 'ENTs' and region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
-        ax_skill.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2, 
-                        alpha=0.7, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}')
-        ax_skill.axvline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2, alpha=0.7)
-    if not np.isnan(obs_lai_avhrr):
-        ax_skill.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2, 
-                        alpha=0.7, label=f'AVHRR {lai_label}: {obs_lai_avhrr:.2f}')
-        ax_skill.axvline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2, alpha=0.7)
-    
-    # Add ensemble labels
-    for i, (obs, pred) in enumerate(zip(y_lai, y_lai_pred_train)):
-        ax_skill.annotate(f"n{int(df_clean.iloc[i]['ensemble_member']):02d}", 
-                         (obs, pred), fontsize=8, ha='center', va='bottom')
-    
-    ax_skill.text(0.05, 0.95, f'R² = {train_score:.3f}\nRMSE = {rmse:.3f}', 
-                 transform=ax_skill.transAxes, fontsize=12, verticalalignment='top',
-                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-    
-    ax_skill.set_xlabel(f'Observed {lai_label}(2000)', fontsize=12, fontweight='bold')
-    ax_skill.set_ylabel(f'Predicted {lai_label}(2000)', fontsize=12, fontweight='bold')
-    ax_skill.set_title(f'{lai_label} Emulator Skill ({YEAR_RANGE}) - {region.replace("_", " ").title()}', 
-                      fontsize=14, fontweight='bold')
-    ax_skill.legend()
-    ax_skill.grid(True, alpha=0.3)
-    ax_skill.set_aspect('equal')
-    
-    output_file_skill = OUTPUT_DIR_LAI_EMULATOR / f"lai_emulator_skill_{YEAR_RANGE}_{region}.png"
-    fig_skill.savefig(output_file_skill, dpi=300, bbox_inches='tight')
-    print(f"  Saved: {output_file_skill.name}")
-    plt.close(fig_skill)
+    if region == 'ENTs':
+        if region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+            print(f"  MODIS Mean LAI (ENTs): {obs_lai_regional_mean_ent[region]:.4f}")
+        if region in obs_lai_regional_annual_max_ent and not np.isnan(obs_lai_regional_annual_max_ent[region]):
+            print(f"  MODIS Annual Max LAI (ENTs): {obs_lai_regional_annual_max_ent[region]:.4f}")
     
     # Create emulator response plots: LAI vs each parameter with emulator curve
     print(f"\n  Creating LAI emulator response curves...")
+    
+    # Debug: Show which observations will be plotted
+    print(f"  LAI observations for {region}:")
+    print(f"    obs_lai (MODIS): {obs_lai if not np.isnan(obs_lai) else 'NaN - will NOT be plotted'}")
+    print(f"    obs_lai_avhrr (AVHRR): {obs_lai_avhrr if not np.isnan(obs_lai_avhrr) else 'NaN - will NOT be plotted'}")
+    if region == 'ENTs':
+        obs_lai_mean = obs_lai_regional_mean_ent.get(region, np.nan)
+        obs_lai_max = obs_lai_regional_annual_max_ent.get(region, np.nan)
+        print(f"    obs_lai_regional_mean_ent: {obs_lai_mean if not np.isnan(obs_lai_mean) else 'NaN - will NOT be plotted'}")
+        print(f"    obs_lai_regional_annual_max_ent: {obs_lai_max if not np.isnan(obs_lai_max) else 'NaN - will NOT be plotted'}")
     
     n_rows, n_cols = calculate_subplot_grid(len(params))
     fig_emulator, axes_emulator = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
@@ -1492,23 +926,46 @@ for region in REGIONS:
         ax.plot(param_range, lai_pred_curve, 'b-', linewidth=3, alpha=0.8,
                label='Emulator prediction', zorder=2)
         
+        # Debug output for first subplot only
+        if idx == 0:
+            print(f"  Adding horizontal lines to emulator response plots:")
+        
         # Add observational LAI as horizontal line
         if not np.isnan(obs_lai):
+            if idx == 0:
+                print(f"    ✓ Adding MODIS {'Summer ' if region == 'ENTs' else ''}{lai_label} line at y={obs_lai:.4f}")
             if region == 'ENTs':
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                           alpha=0.8, label=f'MODIS Summer {lai_label}: {obs_lai:.2f}', zorder=1)
             else:
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                           alpha=0.8, label=f'MODIS {lai_label}: {obs_lai:.2f}', zorder=1)
+        elif idx == 0:
+            print(f"    ✗ Skipping MODIS line (value is NaN)")
+            
         if region == 'ENTs' and region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+            if idx == 0:
+                print(f"    ✓ Adding MODIS Mean {lai_label} line at y={obs_lai_regional_mean_ent[region]:.4f}")
             ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
                       alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=1)
+        elif idx == 0 and region == 'ENTs':
+            print(f"    ✗ Skipping MODIS Mean line (value is NaN or key not in dict)")
+            
         if region == 'ENTs' and region in obs_lai_regional_annual_max_ent and not np.isnan(obs_lai_regional_annual_max_ent[region]):
+            if idx == 0:
+                print(f"    ✓ Adding MODIS Annual Max {lai_label} line at y={obs_lai_regional_annual_max_ent[region]:.4f}")
             ax.axhline(obs_lai_regional_annual_max_ent[region], color='purple', linestyle=':', linewidth=2,
                       alpha=0.8, label=f'MODIS Annual Max {lai_label}: {obs_lai_regional_annual_max_ent[region]:.2f}', zorder=1)
+        elif idx == 0 and region == 'ENTs':
+            print(f"    ✗ Skipping MODIS Annual Max line (value is NaN or key not in dict)")
+            
         if not np.isnan(obs_lai_avhrr):
+            if idx == 0:
+                print(f"    ✓ Adding AVHRR {lai_label} line at y={obs_lai_avhrr:.4f}")
             ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2,
                       alpha=0.8, label=f'AVHRR {lai_label}: {obs_lai_avhrr:.2f}', zorder=1)
+        elif idx == 0:
+            print(f"    ✗ Skipping AVHRR line (value is NaN)")
         
         # Add ensemble labels
         for i, row_data in enumerate(df_clean.iterrows()):
@@ -1550,76 +1007,79 @@ for region in REGIONS:
     
     print(f"  LHS predicted LAI range: {y_lai_lhs_pred.min():.4f} to {y_lai_lhs_pred.max():.4f}")
     
-    # Create 2D parameter space plot: d2bl1 vs l2fr colored by LAI
-    print(f"\n  Creating parameter space visualization...")
-    
-    d2bl1_idx = params.index('fates_allom_d2bl1')
-    l2fr_idx = params.index('fates_allom_l2fr')
-    
-    fig_2d, ax_2d = plt.subplots(figsize=(10, 8))
-    
-    # Plot LHS samples (emulator predictions)
-    scatter_lhs = ax_2d.scatter(lhs_samples[:, d2bl1_idx], lhs_samples[:, l2fr_idx],
-                                c=y_lai_lhs_pred, s=20, alpha=0.4, cmap='YlGn',
-                                edgecolors='none', vmin=y_lai.min(), vmax=y_lai.max())
-    
-    # Plot actual ensemble members
-    scatter_actual = ax_2d.scatter(X[:, d2bl1_idx], X[:, l2fr_idx],
-                                   c=y_lai, s=150, alpha=0.9, cmap='YlGn',
-                                   edgecolors='black', linewidth=2, marker='o',
-                                   vmin=y_lai.min(), vmax=y_lai.max())
-    
-    # Add ensemble labels
-    for i in range(len(X)):
-        ax_2d.annotate(f"n{int(df_clean.iloc[i]['ensemble_member']):02d}",
-                      (X[i, d2bl1_idx], X[i, l2fr_idx]),
-                      fontsize=10, ha='center', va='bottom', fontweight='bold',
-                      bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
-                               edgecolor='none', alpha=0.7))
-    
-    # Add colorbar
-    cbar = plt.colorbar(scatter_actual, ax=ax_2d)
-    cbar.set_label(f'{lai_label}(2000) [m²/m²]', fontsize=12, fontweight='bold')
-    
-    # Add observational LAI as a reference line on colorbar if available
-    if not np.isnan(obs_lai):
-        cbar.ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=3, alpha=0.8)
-        cbar.ax.text(0.5, obs_lai, f' MODIS', 
-                    verticalalignment='center', fontsize=9, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.9))
-    if not np.isnan(obs_lai_avhrr):
-        cbar.ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=3, alpha=0.8)
-        cbar.ax.text(0.5, obs_lai_avhrr, f' AVHRR', 
-                    verticalalignment='center', fontsize=9, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.9))
-    
-    ax_2d.set_xlabel('fates_allom_d2bl1', fontsize=12, fontweight='bold')
-    ax_2d.set_ylabel('fates_allom_l2fr', fontsize=12, fontweight='bold')
-    ax_2d.set_title(f'{lai_label}(2000) Parameter Space ({YEAR_RANGE}) - {region.replace("_", " ").title()}\n' + 
-                    f'Emulator R² = {train_score:.3f}', 
-                    fontsize=14, fontweight='bold')
-    ax_2d.grid(True, alpha=0.3)
-    
-    # Add text box with info
-    info_text = f'Grey dots: {n_samples} LHS samples\nLarge dots: {len(X)} ensemble members'
-    if not np.isnan(obs_lai):
-        info_text += f'\nMODIS {lai_label}: {obs_lai:.2f} m²/m²'
-    if not np.isnan(obs_lai_avhrr):
-        info_text += f'\nAVHRR {lai_label}: {obs_lai_avhrr:.2f} m²/m²'
-    ax_2d.text(0.02, 0.98, info_text,
-              transform=ax_2d.transAxes, fontsize=10, verticalalignment='top',
-              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-    
-    output_file_2d = OUTPUT_DIR_LAI_EMULATOR / f"lai_parameter_space_{YEAR_RANGE}_{region}.png"
-    fig_2d.savefig(output_file_2d, dpi=300, bbox_inches='tight')
-    print(f"  Saved: {output_file_2d.name}")
-    plt.close(fig_2d)
+    # Create 2D parameter space plot: d2bl1 vs l2fr colored by LAI (only if these parameters exist)
+    if 'fates_allom_d2bl1' in params and 'fates_allom_l2fr' in params:
+        print(f"\n  Creating parameter space visualization...")
+        
+        d2bl1_idx = params.index('fates_allom_d2bl1')
+        l2fr_idx = params.index('fates_allom_l2fr')
+        
+        fig_2d, ax_2d = plt.subplots(figsize=(10, 8))
+        
+        # Plot LHS samples (emulator predictions)
+        scatter_lhs = ax_2d.scatter(lhs_samples[:, d2bl1_idx], lhs_samples[:, l2fr_idx],
+                                    c=y_lai_lhs_pred, s=20, alpha=0.4, cmap='YlGn',
+                                    edgecolors='none', vmin=y_lai.min(), vmax=y_lai.max())
+        
+        # Plot actual ensemble members
+        scatter_actual = ax_2d.scatter(X[:, d2bl1_idx], X[:, l2fr_idx],
+                                       c=y_lai, s=150, alpha=0.9, cmap='YlGn',
+                                       edgecolors='black', linewidth=2, marker='o',
+                                       vmin=y_lai.min(), vmax=y_lai.max())
+        
+        # Add ensemble labels
+        for i in range(len(X)):
+            ax_2d.annotate(f"n{int(df_clean.iloc[i]['ensemble_member']):02d}",
+                          (X[i, d2bl1_idx], X[i, l2fr_idx]),
+                          fontsize=10, ha='center', va='bottom', fontweight='bold',
+                          bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
+                                   edgecolor='none', alpha=0.7))
+        
+        # Add colorbar
+        cbar = plt.colorbar(scatter_actual, ax=ax_2d)
+        cbar.set_label(f'{lai_label}(2000) [m²/m²]', fontsize=12, fontweight='bold')
+        
+        # Add observational LAI as a reference line on colorbar if available
+        if not np.isnan(obs_lai):
+            cbar.ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=3, alpha=0.8)
+            cbar.ax.text(0.5, obs_lai, f' MODIS', 
+                        verticalalignment='center', fontsize=9, fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.9))
+        if not np.isnan(obs_lai_avhrr):
+            cbar.ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=3, alpha=0.8)
+            cbar.ax.text(0.5, obs_lai_avhrr, f' AVHRR', 
+                        verticalalignment='center', fontsize=9, fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.9))
+        
+        ax_2d.set_xlabel('fates_allom_d2bl1', fontsize=12, fontweight='bold')
+        ax_2d.set_ylabel('fates_allom_l2fr', fontsize=12, fontweight='bold')
+        ax_2d.set_title(f'{lai_label}(2000) Parameter Space ({YEAR_RANGE}) - {region.replace("_", " ").title()}\n' + 
+                        f'Emulator R² = {train_score:.3f}', 
+                        fontsize=14, fontweight='bold')
+        ax_2d.grid(True, alpha=0.3)
+        
+        # Add text box with info
+        info_text = f'Grey dots: {n_samples} LHS samples\nLarge dots: {len(X)} ensemble members'
+        if not np.isnan(obs_lai):
+            info_text += f'\nMODIS {lai_label}: {obs_lai:.2f} m²/m²'
+        if not np.isnan(obs_lai_avhrr):
+            info_text += f'\nAVHRR {lai_label}: {obs_lai_avhrr:.2f} m²/m²'
+        ax_2d.text(0.02, 0.98, info_text,
+                  transform=ax_2d.transAxes, fontsize=10, verticalalignment='top',
+                  bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        output_file_2d = OUTPUT_DIR_LAI_EMULATOR / f"lai_parameter_space_{YEAR_RANGE}_{region}.png"
+        fig_2d.savefig(output_file_2d, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {output_file_2d.name}")
+        plt.close(fig_2d)
+    else:
+        print(f"\n  Skipping parameter space visualization (requires fates_allom_d2bl1 and fates_allom_l2fr)")
     
     # Create LAI vs parameters plot with emulator samples
     print(f"\n  Creating LAI vs parameters with emulator samples...")
     
-    # Generate 1000 LHS samples for emulator
-    n_emulator_samples = 1000
+    # Generate 2000 LHS samples for emulator
+    n_emulator_samples = 2000
     sampler_emul = qmc.LatinHypercube(d=len(params), seed=43)
     lhs_emul_unit = sampler_emul.random(n=n_emulator_samples)
     lhs_emul = qmc.scale(lhs_emul_unit, param_bounds[:, 0], param_bounds[:, 1])
@@ -1660,10 +1120,24 @@ for region in REGIONS:
             else:
                 ax.axhline(obs_lai, color='darkgreen', linestyle='--', linewidth=2,
                           alpha=0.8, label=f'MODIS {lai_label}: {obs_lai:.2f}', zorder=2)
-        if region == 'ENTs' and region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
-            ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
-                      alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=2)
-        if not np.isnan(obs_lai_avhrr):
+        
+        # Add ENT-specific LAI observations (mean and max for both MODIS and AVHRR)
+        if region == 'ENTs':
+            if region in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[region]):
+                ax.axhline(obs_lai_regional_mean_ent[region], color='darkblue', linestyle='-.', linewidth=2,
+                          alpha=0.8, label=f'MODIS Mean {lai_label}: {obs_lai_regional_mean_ent[region]:.2f}', zorder=2)
+            if region in obs_lai_regional_annual_max_ent and not np.isnan(obs_lai_regional_annual_max_ent[region]):
+                ax.axhline(obs_lai_regional_annual_max_ent[region], color='blue', linestyle='-', linewidth=2.5,
+                          alpha=0.8, label=f'MODIS Max {lai_label}: {obs_lai_regional_annual_max_ent[region]:.2f}', zorder=2)
+            if f'{region}_avhrr' in obs_lai_regional_mean_ent and not np.isnan(obs_lai_regional_mean_ent[f'{region}_avhrr']):
+                ax.axhline(obs_lai_regional_mean_ent[f'{region}_avhrr'], color='orange', linestyle='-.', linewidth=2,
+                          alpha=0.8, label=f'AVHRR Mean {lai_label}: {obs_lai_regional_mean_ent[f"{region}_avhrr"]:.2f}', zorder=2)
+            if region in obs_lai_regional_annual_max_avhrr_ent and not np.isnan(obs_lai_regional_annual_max_avhrr_ent[region]):
+                ax.axhline(obs_lai_regional_annual_max_avhrr_ent[region], color='darkorange', linestyle='-', linewidth=2.5,
+                          alpha=0.8, label=f'AVHRR Max {lai_label}: {obs_lai_regional_annual_max_avhrr_ent[region]:.2f}', zorder=2)
+        
+        # Add AVHRR for non-ENT regions
+        if region != 'ENTs' and not np.isnan(obs_lai_avhrr):
             ax.axhline(obs_lai_avhrr, color='limegreen', linestyle=':', linewidth=2,
                       alpha=0.8, label=f'AVHRR {lai_label}: {obs_lai_avhrr:.2f}', zorder=2)
         
@@ -1697,12 +1171,15 @@ for region in REGIONS:
     # Create second plot colored by VEGC emulator predictions
     print(f"\n  Creating LAI vs parameters colored by VEGC emulator...")
     
+    # Determine VEGC column name based on ensemble
+    vegc_col = 'FATES_VEGC_PPE_2000_V1' if ens_n == 1 else 'FATES_VEGC_PPE_V1'
+    
     # Check if VEGC data is available
-    if 'FATES_VEGC_PPE_2000_V1' not in df_clean.columns:
-        print(f"    WARNING: VEGC data not available for {region}, skipping VEGC-colored plot")
+    if vegc_col not in df_clean.columns:
+        print(f"    WARNING: VEGC column {vegc_col} not available for {region}, skipping VEGC-colored plot")
     else:
         # Train VEGC emulator
-        y_vegc = df_clean['FATES_VEGC_PPE_2000_V1'].values
+        y_vegc = df_clean[vegc_col].values
         lr_vegc = LinearRegression()
         lr_vegc.fit(X, y_vegc)
         
