@@ -53,7 +53,7 @@ elif(ens_n==3):
      casename = 'noresm_beta07_crujra_ppe_2000_v3_'
 
 outputdir = OUTPUT_ROOT+output_dirname             
-VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC']
+VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC','EFLX_LH_TOT']
 
 # Define regions for analysis
 # Note: For global regions, use 0-360 longitude range
