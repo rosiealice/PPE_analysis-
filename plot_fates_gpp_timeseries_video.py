@@ -36,16 +36,19 @@ VAR_NAMES = ["FATES_GPP",
 #"FATES_MORTALITY_BACKGROUND_CFLUX_PF",
 #"FATES_MORTALITY_SENESCENCE_CFLUX_PF",
 #"FATES_HARVEST_WOODPROD_C_FLUX"]
+# Scaling factors for each variable (applied to convert units)
+# Default: 3600*24*365 converts from per-second to per-year
+SCALING_FACTORS = {var: 3600*24*365 for var in VAR_NAMES}
 
-VAR_NAMES = ["FATES_MORTALITY_HYDRAULIC_CFLUX_PF"] 
+VAR_NAMES = ["FATES_MORTALITY_BACKGROUND_CFLUX_PF"] 
+VAR_NAMES = ["FATES_LAI_CANOPY_SZ"] 
+SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
 
 # Convert to list if single string provided
 if isinstance(VAR_NAMES, str):
     VAR_NAMES = [VAR_NAMES]
 
-# Scaling factors for each variable (applied to convert units)
-# Default: 3600*24*365 converts from per-second to per-year
-SCALING_FACTORS = {var: 3600*24*365 for var in VAR_NAMES}
+
 
 OUTPUT_FILE = "/datalake/NS9560K/www/diagnostics/noresm/rosief/gifs/fates_" + "_".join(VAR_NAMES) + "_timeseries.gif"
 N_YEARS = 3 # Number of years to process (None for all years)
@@ -162,13 +165,19 @@ try:
             n_dims = len(gpp_var.dims)
             has_extra_dim = n_dims > 2
             extra_dims = []
+            split_extra_dim = False
             if has_extra_dim:
                 extra_dims = [d for d in gpp_var.dims if d != 'time' and d != spatial_dim]
-                print(f"  Will sum over extra dimensions: {extra_dims}")
+                # If only one variable, create subplots for each member of extra dimension
+                if len(VAR_NAMES) == 1 and len(extra_dims) == 1:
+                    split_extra_dim = True
+                    print(f"  Will create subplots for each member of dimension: {extra_dims[0]}")
+                else:
+                    print(f"  Will sum over extra dimensions: {extra_dims}")
             
-            # Get first frame
+            # Get first frame(s)
             first_frame_data = gpp_var.isel(time=0)
-            if has_extra_dim:
+            if has_extra_dim and not split_extra_dim:
                 first_frame = first_frame_data.sum(dim=extra_dims).values
             else:
                 first_frame = first_frame_data.values
@@ -188,9 +197,16 @@ try:
                 'units': units,
                 'has_extra_dim': has_extra_dim,
                 'extra_dims': extra_dims,
+                'split_extra_dim': split_extra_dim,
                 'first_frame': first_frame,
                 'dims': gpp_var.dims
             }
+            
+            # If splitting extra dimension, store dimension size
+            if split_extra_dim:
+                extra_dim_name = extra_dims[0]
+                var_metadata[VAR_NAME]['extra_dim_size'] = len(ds[extra_dim_name])
+                print(f"  {extra_dim_name} has {len(ds[extra_dim_name])} members")
     
     # Compute color scales from last timestep
     print("\nComputing color scales from last timestep...")
@@ -202,7 +218,10 @@ try:
         with xr.open_dataset(last_file_path, decode_times=False) as ds_last:
             for VAR_NAME in VAR_NAMES:
                 last_frame_data = ds_last[VAR_NAME].isel(time=last_time_idx)
-                if var_metadata[VAR_NAME]['has_extra_dim']:
+                if var_metadata[VAR_NAME]['split_extra_dim']:
+                    # Include all members of extra dimension
+                    last_frame = last_frame_data.values
+                elif var_metadata[VAR_NAME]['has_extra_dim']:
                     last_frame = last_frame_data.sum(dim=var_metadata[VAR_NAME]['extra_dims']).values
                 else:
                     last_frame = last_frame_data.values
@@ -215,7 +234,7 @@ try:
         global_vmax = float(np.nanpercentile(all_values, 98))
         print(f"  Global range: {global_vmin:.4f} to {global_vmax:.4f}")
         
-        # Set same limits for all variables
+        # Set same limits for all variables/subplots
         for VAR_NAME in VAR_NAMES:
             var_metadata[VAR_NAME]['vmin'] = global_vmin
             var_metadata[VAR_NAME]['vmax'] = global_vmax
@@ -224,7 +243,10 @@ try:
         with xr.open_dataset(last_file_path, decode_times=False) as ds_last:
             for VAR_NAME in VAR_NAMES:
                 last_frame_data = ds_last[VAR_NAME].isel(time=last_time_idx)
-                if var_metadata[VAR_NAME]['has_extra_dim']:
+                if var_metadata[VAR_NAME]['split_extra_dim']:
+                    # Include all members when computing color scale
+                    last_frame = last_frame_data.values
+                elif var_metadata[VAR_NAME]['has_extra_dim']:
                     last_frame = last_frame_data.sum(dim=var_metadata[VAR_NAME]['extra_dims']).values
                 else:
                     last_frame = last_frame_data.values
@@ -244,62 +266,97 @@ try:
     
     # Create figure and subplots
     print("\nSetting up animation...")
-    n_rows = (n_vars + 1) // 2  # 2 columns
-    n_cols = min(n_vars, 2)
+    # Determine number of subplots needed
+    n_subplots = 0
+    for VAR_NAME in VAR_NAMES:
+        if var_metadata[VAR_NAME]['split_extra_dim']:
+            n_subplots += var_metadata[VAR_NAME]['extra_dim_size']
+        else:
+            n_subplots += 1
+    
+    # Landscape layout: prefer 3-4 columns for wider-than-tall arrangement
+    n_cols = min(n_subplots, 4) if n_subplots > 2 else min(n_subplots, 2)
+    n_rows = (n_subplots + n_cols - 1) // n_cols  # Ceiling division
     
     # Always use cartopy projection for map background
     fig, axs = plt.subplots(n_rows, n_cols, figsize=(14*n_cols, 8*n_rows), 
                            subplot_kw={'projection': ccrs.PlateCarree()})
     
     # Make axs always a list for consistent indexing
-    if n_vars == 1:
+    if n_subplots == 1:
         axs = [axs]
     else:
         axs = axs.flatten()
     
-    # Initialize plots for each variable
+    # Initialize plots for each variable/subplot
     ims = []
     cbars = []
-    for idx, VAR_NAME in enumerate(VAR_NAMES):
-        ax = axs[idx]
+    subplot_info = []  # Store (VAR_NAME, extra_dim_idx) for each subplot
+    subplot_idx = 0
+    
+    for VAR_NAME in VAR_NAMES:
         meta = var_metadata[VAR_NAME]
-        first_frame = meta['first_frame']
         vmin = meta['vmin']
         vmax = meta['vmax']
         
-        # Setup map features - add coastlines and country borders
-        ax.coastlines(linewidth=0.5)
-        ax.add_feature(cfeature.BORDERS, linestyle='-', linewidth=0.2, edgecolor='gray')
-        if use_cartopy and 'lat' in meta['dims']:
-            ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
-        
-        # Initialize plot
-        if use_cartopy and 'lat' in meta['dims']:
-            im = ax.pcolormesh(lon, lat, first_frame, 
-                              transform=ccrs.PlateCarree(),
-                              cmap=cmap_choose, vmin=vmin, vmax=vmax)
+        # Determine how many subplots for this variable
+        if meta['split_extra_dim']:
+            n_members = meta['extra_dim_size']
+            print(f"\n{VAR_NAME}: Creating {n_members} subplots (one per {meta['extra_dims'][0]})")
+            print(f"  Color scale: {vmin:.4f} to {vmax:.4f}")
         else:
-            # Unstructured grid - use scatter plot with map background
-            im = ax.scatter(lon, lat, c=first_frame,
-                           cmap=cmap_choose, vmin=vmin, vmax=vmax, s=7,
-                           transform=ccrs.PlateCarree())
+            n_members = 1
+            print(f"\n{VAR_NAME}: Color scale: {vmin:.4f} to {vmax:.4f}")
         
-        ims.append(im)
-        
-        # Add colorbar
-        cbar = plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, aspect=40)
-        cbar.set_label(f'{meta["units"]}', fontsize=14, fontweight='bold')
-        cbars.append(cbar)
-        
-        # Set title with year-month (relative to start)
-        timestep = 0
-        year = timestep // 12 + 1
-        month = timestep % 12 + 1
-        time_str = f'Year {year}, Month {month:02d}'
-        ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
+        for member_idx in range(n_members):
+            ax = axs[subplot_idx]
+            
+            # Extract the appropriate data slice for first frame
+            if meta['split_extra_dim']:
+                first_frame = meta['first_frame'][member_idx, :] * meta['scaling_factor']
+            else:
+                first_frame = meta['first_frame'] * meta['scaling_factor']
+            
+            # Setup map features - add coastlines and country borders
+            ax.coastlines(linewidth=0.5)
+            ax.add_feature(cfeature.BORDERS, linestyle='-', linewidth=0.2, edgecolor='gray')
+            if use_cartopy and 'lat' in meta['dims']:
+                ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+            
+            # Initialize plot
+            if use_cartopy and 'lat' in meta['dims']:
+                im = ax.pcolormesh(lon, lat, first_frame, 
+                                  transform=ccrs.PlateCarree(),
+                                  cmap=cmap_choose, vmin=vmin, vmax=vmax)
+            else:
+                # Unstructured grid - use scatter plot with map background
+                im = ax.scatter(lon, lat, c=first_frame,
+                               cmap=cmap_choose, vmin=vmin, vmax=vmax, s=7,
+                               transform=ccrs.PlateCarree())
+            
+            ims.append(im)
+            subplot_info.append((VAR_NAME, member_idx if meta['split_extra_dim'] else None))
+            
+            # Add colorbar
+            cbar = plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, aspect=40)
+            cbar.set_label(f'{meta["units"]}', fontsize=14, fontweight='bold')
+            cbars.append(cbar)
+            
+            # Set title with year-month (relative to start)
+            timestep = 0
+            year = timestep // 12 + 1
+            month = timestep % 12 + 1
+            time_str = f'Year {year}, Month {month:02d}'
+            if meta['split_extra_dim']:
+                extra_dim_name = meta['extra_dims'][0]
+                ax.set_title(f'{VAR_NAME} [{extra_dim_name}={member_idx}] - {time_str}', fontsize=16, fontweight='bold')
+            else:
+                ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
+            
+            subplot_idx += 1
     
     # Hide any extra subplots
-    for idx in range(n_vars, len(axs)):
+    for idx in range(n_subplots, len(axs)):
         axs[idx].axis('off')
     
     plt.tight_layout()
@@ -327,14 +384,19 @@ try:
         
         # Update each subplot
         artists = []
-        for idx, VAR_NAME in enumerate(VAR_NAMES):
+        for idx, (VAR_NAME, member_idx) in enumerate(subplot_info):
             meta = var_metadata[VAR_NAME]
             ax = axs[idx]
             im = ims[idx]
             
             # Load data for this timestep
             data_timestep = current_ds[VAR_NAME].isel(time=time_idx)
-            if meta['has_extra_dim']:
+            
+            # Extract appropriate data based on whether we're splitting dimensions
+            if meta['split_extra_dim']:
+                # Get specific member of extra dimension
+                data = data_timestep.isel({meta['extra_dims'][0]: member_idx}).values
+            elif meta['has_extra_dim']:
                 data = data_timestep.sum(dim=meta['extra_dims']).values
             else:
                 data = data_timestep.values
@@ -354,7 +416,11 @@ try:
             year = frame // 12 + 1
             month = frame % 12 + 1
             time_str = f'Year {year}, Month {month:02d}'
-            ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
+            if meta['split_extra_dim']:
+                extra_dim_name = meta['extra_dims'][0]
+                ax.set_title(f'{VAR_NAME} [{extra_dim_name}={member_idx}] - {time_str}', fontsize=16, fontweight='bold')
+            else:
+                ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
             artists.append(im)
         
         return artists
