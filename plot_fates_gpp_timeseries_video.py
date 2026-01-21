@@ -18,6 +18,7 @@ import sys
 
 # Configuration
 DATA_DIR = Path("/datalake/NS9560K/rosief/i1850.ne16pg3_tn14.fatesnocomp.noresm3_0_beta08.CPLHIST.2025-12-18/lnd/hist/")
+cmap_choose = 'YlGn'
 
 # Variable names - can be a single string or a list of strings
 VAR_NAMES = ["FATES_MORTALITY_HYDRAULIC_CFLUX_PF"]  # or 
@@ -29,20 +30,30 @@ VAR_NAMES = ["FATES_GPP",
   "FATES_HET_RESP", 
   "FATES_LITTER_IN"]
 
- VAR_NAMES = ["FATES_MORTALITY_FIRE_CFLUX_PF","FATES_MORTALITY_HYDRAULIC_CFLUX_PF",
-"FATES_MORTALITY_CSTARV_CFLUX_PF",
- "FATES_MORTALITY_BACKGROUND_CFLUX_PF",
-  "FATES_MORTALITY_SENESCENCE_CFLUX_PF"]
+#VAR_NAMES = ["FATES_MORTALITY_FIRE_CFLUX_PF", 
+# "FATES_MORTALITY_HYDRAULIC_CFLUX_PF",
+#"FATES_MORTALITY_CSTARV_CFLUX_PF",
+#"FATES_MORTALITY_BACKGROUND_CFLUX_PF",
+#"FATES_MORTALITY_SENESCENCE_CFLUX_PF",
+#"FATES_HARVEST_WOODPROD_C_FLUX"]
 
-
+VAR_NAMES = ["FATES_MORTALITY_HYDRAULIC_CFLUX_PF"] 
 
 # Convert to list if single string provided
 if isinstance(VAR_NAMES, str):
     VAR_NAMES = [VAR_NAMES]
 
+# Scaling factors for each variable (applied to convert units)
+# Default: 3600*24*365 converts from per-second to per-year
+SCALING_FACTORS = {var: 3600*24*365 for var in VAR_NAMES}
+
 OUTPUT_FILE = "/datalake/NS9560K/www/diagnostics/noresm/rosief/gifs/fates_" + "_".join(VAR_NAMES) + "_timeseries.gif"
-N_YEARS = 10 # Number of years to process (None for all years)
+N_YEARS = 3 # Number of years to process (None for all years)
 SAME_COLOR_SCALE = True  # Set to True to use same color scale for all variables
+# Unit labels for each variable (applied when scaling is used)
+# If not specified, original units from the file will be used
+UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
+
 
 print(f"Reading data from: {DATA_DIR}")
 print(f"Variables to plot: {VAR_NAMES}")
@@ -162,9 +173,19 @@ try:
             else:
                 first_frame = first_frame_data.values
             
+            # Apply scaling factor
+            scaling_factor = SCALING_FACTORS.get(VAR_NAME, 1.0)
+            print(f"  Applying scaling factor {scaling_factor} to {VAR_NAME}")
+            first_frame = first_frame * scaling_factor
+            
+            # Get units (use custom label if provided, otherwise original units)
+            units = UNIT_LABELS.get(VAR_NAME, gpp_var.attrs.get("units", "units not specified"))
+            print(f"  Units for {VAR_NAME}: {units}")
+            
             # Store metadata
             var_metadata[VAR_NAME] = {
-                'units': gpp_var.attrs.get("units", "units not specified"),
+                'scaling_factor': scaling_factor,
+                'units': units,
                 'has_extra_dim': has_extra_dim,
                 'extra_dims': extra_dims,
                 'first_frame': first_frame,
@@ -185,6 +206,8 @@ try:
                     last_frame = last_frame_data.sum(dim=var_metadata[VAR_NAME]['extra_dims']).values
                 else:
                     last_frame = last_frame_data.values
+                # Apply scaling factor
+                last_frame = last_frame * var_metadata[VAR_NAME]['scaling_factor']
                 all_values.append(last_frame.flatten())
         
         all_values = np.concatenate(all_values)
@@ -205,8 +228,12 @@ try:
                     last_frame = last_frame_data.sum(dim=var_metadata[VAR_NAME]['extra_dims']).values
                 else:
                     last_frame = last_frame_data.values
-                vmin = float(np.nanpercentile(last_frame, 2))
-                vmax = float(np.nanpercentile(last_frame, 98))
+                # Apply scaling factor
+                last_frame = last_frame * var_metadata[VAR_NAME]['scaling_factor']
+                # Combine first and last frame for better color scale
+                all_vals = np.concatenate([var_metadata[VAR_NAME]['first_frame'].flatten(), last_frame.flatten()])
+                vmin = float(np.nanpercentile(all_vals, 2))
+                vmax = float(np.nanpercentile(all_vals, 98))
                 var_metadata[VAR_NAME]['vmin'] = vmin
                 var_metadata[VAR_NAME]['vmax'] = vmax
                 print(f"  {VAR_NAME}: {vmin:.4f} to {vmax:.4f}")
@@ -250,22 +277,26 @@ try:
         if use_cartopy and 'lat' in meta['dims']:
             im = ax.pcolormesh(lon, lat, first_frame, 
                               transform=ccrs.PlateCarree(),
-                              cmap='YlGn', vmin=vmin, vmax=vmax)
+                              cmap=cmap_choose, vmin=vmin, vmax=vmax)
         else:
             # Unstructured grid - use scatter plot with map background
             im = ax.scatter(lon, lat, c=first_frame,
-                           cmap='YlGn', vmin=vmin, vmax=vmax, s=7,
+                           cmap=cmap_choose, vmin=vmin, vmax=vmax, s=7,
                            transform=ccrs.PlateCarree())
         
         ims.append(im)
         
         # Add colorbar
         cbar = plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, aspect=40)
-        cbar.set_label(f'{VAR_NAME} [{meta["units"]}]', fontsize=10, fontweight='bold')
+        cbar.set_label(f'{meta["units"]}', fontsize=14, fontweight='bold')
         cbars.append(cbar)
         
-        # Set title
-        ax.set_title(f'{VAR_NAME} - Day: {file_time_map[0][2]}', fontsize=12, fontweight='bold')
+        # Set title with year-month (relative to start)
+        timestep = 0
+        year = timestep // 12 + 1
+        month = timestep % 12 + 1
+        time_str = f'Year {year}, Month {month:02d}'
+        ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
     
     # Hide any extra subplots
     for idx in range(n_vars, len(axs)):
@@ -308,6 +339,9 @@ try:
             else:
                 data = data_timestep.values
             
+            # Apply scaling factor
+            data = data * meta['scaling_factor']
+            
             # Update plot
             if use_cartopy and 'lat' in meta['dims']:
                 im.set_array(data.ravel())
@@ -316,8 +350,11 @@ try:
             else:
                 im.set_data(data)
             
-            # Update title
-            ax.set_title(f'{VAR_NAME} - {time_val}', fontsize=12, fontweight='bold')
+            # Update title with year-month (relative to start)
+            year = frame // 12 + 1
+            month = frame % 12 + 1
+            time_str = f'Year {year}, Month {month:02d}'
+            ax.set_title(f'{VAR_NAME} - {time_str}', fontsize=16, fontweight='bold')
             artists.append(im)
         
         return artists
