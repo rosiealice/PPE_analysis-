@@ -18,16 +18,25 @@ from sklearn.preprocessing import StandardScaler
 
 # EMULATOR CONFIGURATION
 # Choose emulator type: 'linear' or 'gp' (Gaussian Process)
-EMULATOR_TYPE = 'gp'  # Change to 'gp' for Gaussian Process emulator
+EMULATOR_TYPE = 'linear'  # Change to 'gp' for Gaussian Process emulator
 import xarray as xr
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-def get_emulator():
-    """Return the appropriate emulator based on EMULATOR_TYPE setting"""
+def get_emulator(n_dims=None):
+    """Return the appropriate emulator based on EMULATOR_TYPE setting
+    
+    Args:
+        n_dims: Number of input dimensions (parameters). If None, uses isotropic kernel.
+    """
     if EMULATOR_TYPE == 'gp':
         # Gaussian Process with RBF kernel
-        kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=[1.0]*5, length_scale_bounds=(1e-2, 1e2)) + WhiteKernel(noise_level=1e-5)
+        if n_dims is not None:
+            # Anisotropic kernel with specified dimensions
+            kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=[1.0]*n_dims, length_scale_bounds=(1e-2, 1e2)) + WhiteKernel(noise_level=1e-5)
+        else:
+            # Isotropic kernel (single length scale for all dimensions)
+            kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2)) + WhiteKernel(noise_level=1e-5)
         return GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, alpha=1e-6, normalize_y=True)
     else:
         # Linear Regression (default)
@@ -37,23 +46,64 @@ def get_emulator():
 
 DATA_DIR = Path("/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/")
 
-ens_n = 3  # Set ensemble number (1, 2, or 3)
+ens_n = 9  # Set ensemble number (1, 2, or 3)
+SP_MODE = False  # Set to True for SP (Satellite Phenology) mode - disables NPP, VEGC, and CUE analysis
+
 if(ens_n==1):
     DATA_DIR = DATA_DIR / "ppe_2000_v1_soilc/"
     YEAR_RANGE = "years09-09"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
     params = ['fates_allom_l2fr', 'fates_maintresp_leaf_ryan1991_baserate', 'fates_allom_d2bl1', 'fates_leaf_slatop']
+    SP_MODE = False
 
 elif(ens_n==2):
     DATA_DIR = DATA_DIR / "ppe_2000_v1_c4g/"
     YEAR_RANGE = "years39-39"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
     params = ['fates_leaf_vcmax25top', 'fates_leaf_slatop', 'fates_turnover_leaf_canopy', 'fates_landuse_grazing_rate', 'fates_fire_cg_strikes']
+    SP_MODE = False
 
 elif(ens_n==3):
     DATA_DIR = DATA_DIR / "ppe_2000_v3_ent/"
     YEAR_RANGE = "years29-29"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
     params = ['fates_stoich_nitr', 'fates_leaf_vcmax25top',
                   'fates_allom_d2bl1', 'fates_leaf_slatop','fates_grperc']
+    SP_MODE = False
 
+elif(ens_n==4):
+    DATA_DIR = DATA_DIR / "ppe_2000_v4_SP/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py     
+    params =  [ 'fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_fnps']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs
+
+elif(ens_n==5):
+    DATA_DIR = DATA_DIR / "ppe_2000_v5_SP2/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py     
+    params =  [ 'fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept','d_max','frac_sat_soil_dsl_init']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs
+
+elif(ens_n==6):
+    DATA_DIR = DATA_DIR / "ppe_2000_v6_SP3/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py               
+    params =  ['fates_rad_leaf_clumping_index','fates_turb_leaf_diameter','fates_maintresp_leaf_atkin2017_baserate','sucsat_sf','watsat_sf']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs
+
+
+elif(ens_n==7):
+    DATA_DIR = DATA_DIR / "ppe_2000_v7_SP4/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
+    params =  ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept','maximum_leaf_wetted_fraction','liq_canopy_storage_scalar']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs
+
+elif(ens_n==8):
+    DATA_DIR = DATA_DIR / "ppe_2000_v8_SP5/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
+    params =  ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept','maximum_leaf_wetted_fraction','liq_canopy_storage_scalar']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs
+
+elif(ens_n==9):
+    DATA_DIR = DATA_DIR / "ppe_2000_v9_SP6/"
+    YEAR_RANGE = "years08-08"  # Update this to match the YEARS variable in analyze_ensemble_timeseries.py
+    params =  ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept','maximum_leaf_wetted_fraction']
+    SP_MODE = True  # SP mode on - no NPP, VEGC, or CUE outputs                                                             
 
 
 CSV_DIR = DATA_DIR / "csv_data"  # CSV files are stored in this subdirectory
@@ -134,6 +184,12 @@ obs_lai_regional_avhrr_summer = {region: np.nan for region in REGIONS}  # For su
 obs_lai_regional_mean_ent = {}  # For mean (annual) LAI for ENTs
 obs_lai_regional_annual_max_ent = {}  # For mean annual maximum LAI for ENTs (MODIS)
 obs_lai_regional_annual_max_avhrr_ent = {}  # For mean annual maximum LAI for ENTs (AVHRR)
+obs_et_regional_wecann = {region: np.nan for region in REGIONS}  # For WECANN ET
+obs_et_regional_wecann_summer = {region: np.nan for region in REGIONS}  # For summer WECANN ET
+obs_et_regional_wecann_annual_max = {region: np.nan for region in REGIONS}  # For annual max WECANN ET
+obs_et_regional_class = {region: np.nan for region in REGIONS}  # For CLASS ET
+obs_et_regional_class_summer = {region: np.nan for region in REGIONS}  # For summer CLASS ET
+obs_et_regional_class_annual_max = {region: np.nan for region in REGIONS}  # For annual max CLASS ET
 
 if OBS_DATA_CSV.exists():
     obs_df = pd.read_csv(OBS_DATA_CSV)
@@ -193,6 +249,26 @@ if OBS_DATA_CSV.exists():
                 if 'lai_avhrr_annual_max' in obs_df.columns and not pd.isna(row['lai_avhrr_annual_max']):
                     obs_lai_regional_annual_max_avhrr_ent[region] = float(row['lai_avhrr_annual_max'])
                     print(f"  {region} AVHRR Annual Max LAI: {obs_lai_regional_annual_max_avhrr_ent[region]:.4f}")
+            
+            # ET observations
+            if 'et_wecann' in obs_df.columns and not pd.isna(row['et_wecann']):
+                obs_et_regional_wecann[region] = float(row['et_wecann'])
+                print(f"  {region} WECANN ET: {obs_et_regional_wecann[region]:.4f} W m-2")
+            if 'et_wecann_summer' in obs_df.columns and not pd.isna(row['et_wecann_summer']):
+                obs_et_regional_wecann_summer[region] = float(row['et_wecann_summer'])
+                if region == 'ENTs':
+                    print(f"  {region} WECANN Summer ET: {obs_et_regional_wecann_summer[region]:.4f} W m-2")
+            if 'et_wecann_annual_max' in obs_df.columns and not pd.isna(row['et_wecann_annual_max']):
+                obs_et_regional_wecann_annual_max[region] = float(row['et_wecann_annual_max'])
+            if 'et_class' in obs_df.columns and not pd.isna(row['et_class']):
+                obs_et_regional_class[region] = float(row['et_class'])
+                print(f"  {region} CLASS ET: {obs_et_regional_class[region]:.4f} W m-2")
+            if 'et_class_summer' in obs_df.columns and not pd.isna(row['et_class_summer']):
+                obs_et_regional_class_summer[region] = float(row['et_class_summer'])
+                if region == 'ENTs':
+                    print(f"  {region} CLASS Summer ET: {obs_et_regional_class_summer[region]:.4f} W m-2")
+            if 'et_class_annual_max' in obs_df.columns and not pd.isna(row['et_class_annual_max']):
+                obs_et_regional_class_annual_max[region] = float(row['et_class_annual_max'])
 else:
     print(f"  WARNING: Observational data CSV not found: {OBS_DATA_CSV}")
     print(f"  All observations will be set to NaN")
@@ -256,6 +332,65 @@ print(f"  ENT_GRID_CELLS: {'Extracted' if ENT_GRID_CELLS is not None else 'NOT e
 print(f"  AC3G_GRID_CELLS: {'Extracted' if AC3G_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
 print(f"  C3G_GRID_CELLS: {'Extracted' if C3G_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
 print(f"  C4_GRID_CELLS: {'Extracted' if C4_GRID_CELLS is not None else 'NOT extracted (will use REGION_BOUNDS or NaN)'}")
+
+# Load default parameter values from FATES parameter file
+print("\n" + "="*60)
+print("LOADING DEFAULT PARAMETER VALUES")
+print("="*60)
+DEFAULT_PARAMS_FILE = Path("/nird/home/rosief/gt/PPE_analysis/fates_params_sci.1.88.6_api.42.0.0_14pft_nor_sci4_api1_c260124.nc")
+default_params = {}
+
+if DEFAULT_PARAMS_FILE.exists():
+    print(f"Reading default parameters from: {DEFAULT_PARAMS_FILE.name}")
+    ds_params = xr.open_dataset(DEFAULT_PARAMS_FILE)
+    
+    # Get PFT names
+    pft_names = []
+    if 'pftname' in ds_params:
+        pft_names = ds_params['pftname'].values
+        # Convert from byte strings to regular strings if needed
+        if hasattr(pft_names[0], 'decode'):
+            pft_names = [name.decode('utf-8').strip() for name in pft_names]
+        else:
+            pft_names = [str(name).strip() for name in pft_names]
+        print(f"  Found {len(pft_names)} PFTs:")
+        for i, name in enumerate(pft_names):
+            print(f"    PFT {i}: {name}")
+        
+        # Map PFT names to regions
+        pft_to_region = {
+            'broadleaf_deciduous_boreal_tree': 'BDTs',
+            'needleleaf_evergreen_boreal_tree': 'BETs',
+            'needleleaf_evergreen_temperate_tree': 'ENTs',
+            'arctic_c3_grass': 'AC3G',
+            'cool_c3_grass': 'C3G',
+            'c4_grass': 'C4'
+        }
+        
+        # Extract default values for each parameter and PFT
+        for param in params:
+            if param in ds_params:
+                param_values = ds_params[param].values
+                default_params[param] = {}
+                print(f"\n  Parameter: {param}")
+                for i, pft_name in enumerate(pft_names):
+                    # Find matching region
+                    for key, region in pft_to_region.items():
+                        if key in pft_name.lower():
+                            default_params[param][region] = float(param_values[i])
+                            print(f"    {region}: {param_values[i]:.4f}")
+                            break
+            else:
+                print(f"\n  WARNING: Parameter {param} not found in default params file")
+    else:
+        print("  WARNING: 'pftname' variable not found in parameter file")
+    
+    ds_params.close()
+    print(f"\nDefault parameters loaded successfully")
+else:
+    print(f"WARNING: Default parameters file not found: {DEFAULT_PARAMS_FILE}")
+    print("  3D plots will not show default parameter markers")
+
 
 # Unit conversion factor for FATES_GPP: kgC m-2 s-1 to gC m-2 day-1
 # kgC to gC: multiply by 1000
@@ -449,6 +584,33 @@ def get_npp_column(region, df=None):
             return None  # Neither column exists or has data
     return col_2000  # Default when df not provided
 
+def get_et_column(region, df=None):
+    """
+    Returns the appropriate ET column for a given region.
+    Tries PPE_2000_V1 first, then falls back to PPE_V1 if not available or empty.
+    
+    Args:
+        region: Region name
+        df: Optional dataframe to check for column availability
+    
+    Returns:
+        Column name string (e.g., 'EFLX_LH_TOT_PPE_2000_V1' or 'EFLX_LH_TOT_PPE_V1')
+    """
+    col_2000 = 'EFLX_LH_TOT_PPE_2000_V1'
+    col_v1 = 'EFLX_LH_TOT_PPE_V1'
+    
+    if df is not None:
+        # Check if 2000 column exists and has data
+        if col_2000 in df.columns and df[col_2000].notna().any():
+            return col_2000
+        # Fall back to V1 column
+        elif col_v1 in df.columns and df[col_v1].notna().any():
+            return col_v1
+        else:
+            return None  # Neither column has data
+    
+    return col_2000  # Default when df not provided
+
 # Read selected members (high NPP, low LAI)
 selected_data = {}
 for region in REGIONS:
@@ -537,41 +699,70 @@ for region in REGIONS:
         print(f"  WARNING: LAI column not available, using GPP values for coloring")
         y_lai = y  # Fallback to GPP if LAI not available
     
+    # Get ET data for coloring GPP plots
+    et_col = get_et_column(region, df_clean)
+    if et_col in df_clean.columns:
+        y_et = df_clean[et_col].values
+        print(f"  Using {et_col} for coloring GPP plots")
+    else:
+        print(f"  WARNING: ET column not available, using GPP values for coloring")
+        y_et = y  # Fallback to GPP if ET not available
+    
     # Train emulator for GPP
     print(f"  Training GPP emulator ({EMULATOR_TYPE.upper()}) on {len(df_clean)} ensemble members...")
-    lr = get_emulator()
-    lr.fit(X, y)
     
-    # Train LAI emulator if LAI data is available
-    if lai_col in df_clean.columns:
-        lr_lai = get_emulator()
-        lr_lai.fit(X, y_lai)
+    # Scale input features for better emulator performance (especially for GP)
+    scaler_X = StandardScaler()
+    X_scaled = scaler_X.fit_transform(X)
+    
+    lr = get_emulator(n_dims=len(params_to_use))
+    lr.fit(X_scaled, y)
+    
+    # Debug: Check if emulator is working
+    y_pred_check = lr.predict(X_scaled)
+    print(f"  GPP training predictions range: {y_pred_check.min():.4f} to {y_pred_check.max():.4f}")
+    print(f"  GPP training actual range: {y.min():.4f} to {y.max():.4f}")
+    
+    # Train LAI emulator if LAI data is available (skip in SP mode)
+    lr_lai = None
+    if not SP_MODE and lai_col in df_clean.columns:
+        lr_lai = get_emulator(n_dims=len(params_to_use))
+        lr_lai.fit(X_scaled, y_lai)
         print(f"  Training LAI emulator ({EMULATOR_TYPE.upper()})...")
     
-    # Train VEGC emulator if VEGC data is available
+    # Train ET emulator if ET data is available
+    lr_et = None
+    if et_col in df_clean.columns:
+        lr_et = get_emulator(n_dims=len(params_to_use))
+        lr_et.fit(X_scaled, y_et)
+        print(f"  Training ET emulator ({EMULATOR_TYPE.upper()})...")
+        et_r2 = lr_et.score(X_scaled, y_et)
+        print(f"  ET Emulator R²: {et_r2:.4f}")
+    
+    # Train VEGC emulator if VEGC data is available (skip in SP mode)
     vegc_col = get_vegc_column(region, df_clean)
     lr_vegc = None
-    if vegc_col and vegc_col in df_clean.columns:
+    if not SP_MODE and vegc_col and vegc_col in df_clean.columns:
         y_vegc = df_clean[vegc_col].values
-        lr_vegc = get_emulator()
-        lr_vegc.fit(X, y_vegc)
+        lr_vegc = get_emulator(n_dims=len(params_to_use))
+        lr_vegc.fit(X_scaled, y_vegc)
         print(f"  Training VEGC emulator ({EMULATOR_TYPE.upper()})...")
-        vegc_r2 = lr_vegc.score(X, y_vegc)
+        vegc_r2 = lr_vegc.score(X_scaled, y_vegc)
         print(f"  VEGC Emulator R²: {vegc_r2:.4f}")
     
-    # Train NPP emulator if NPP data is available
+    # Train NPP emulator if NPP data is available (skip in SP mode)
     npp_col = get_npp_column(region, df_clean)
     lr_npp = None
-    if npp_col and npp_col in df_clean.columns:
+    if not SP_MODE and npp_col and npp_col in df_clean.columns:
         y_npp = df_clean[npp_col].values
-        lr_npp = get_emulator()
-        lr_npp.fit(X, y_npp)
+        lr_npp = get_emulator(n_dims=len(params_to_use))
+        lr_npp.fit(X_scaled, y_npp)
         print(f"  Training NPP emulator ({EMULATOR_TYPE.upper()})...")
-        npp_r2 = lr_npp.score(X, y_npp)
+        npp_r2 = lr_npp.score(X_scaled, y_npp)
         print(f"  NPP Emulator R²: {npp_r2:.4f}")
     
     # Evaluate emulator skill
-    y_pred_train = lr.predict(X)
+    y_pred_train = lr.predict(X_scaled)
     r2 = 1 - np.sum((y - y_pred_train)**2) / np.sum((y - y.mean())**2)
     rmse = np.sqrt(np.mean((y - y_pred_train)**2))
     print(f"  GPP Emulator R²: {r2:.4f}")
@@ -579,7 +770,7 @@ for region in REGIONS:
     
     # Generate Latin Hypercube samples for emulator predictions
     n_samples = 3000
-    sampler = qmc.LatinHypercube(d=len(params))
+    sampler = qmc.LatinHypercube(d=len(params_to_use))
     sample = sampler.random(n=n_samples)
     
     # Scale samples to parameter ranges
@@ -587,28 +778,39 @@ for region in REGIONS:
     param_maxs = X.max(axis=0)
     lhs_samples = qmc.scale(sample, param_mins, param_maxs)
     
+    # Scale LHS samples using the same scaler as training data
+    lhs_samples_scaled = scaler_X.transform(lhs_samples)
+    
     # Predict GPP for LHS samples
-    y_lhs_pred = lr.predict(lhs_samples)
+    y_lhs_pred = lr.predict(lhs_samples_scaled)
     
     # Predict LAI for LHS samples if LAI emulator is available
-    if lai_col in df_clean.columns:
-        y_lai_lhs_pred = lr_lai.predict(lhs_samples)
+    if lr_lai is not None:
+        y_lai_lhs_pred = lr_lai.predict(lhs_samples_scaled)
         print(f"  LAI range: {y_lai.min():.4f} to {y_lai.max():.4f}")
         print(f"  LHS predicted LAI range: {y_lai_lhs_pred.min():.4f} to {y_lai_lhs_pred.max():.4f}")
     else:
         y_lai_lhs_pred = y_lhs_pred  # Fallback to GPP
     
+    # Predict ET for LHS samples if ET emulator is available
+    if lr_et is not None:
+        y_et_lhs_pred = lr_et.predict(lhs_samples_scaled)
+        print(f"  ET range: {y_et.min():.4f} to {y_et.max():.4f}")
+        print(f"  LHS predicted ET range: {y_et_lhs_pred.min():.4f} to {y_et_lhs_pred.max():.4f}")
+    else:
+        y_et_lhs_pred = y_lhs_pred  # Fallback to GPP
+    
     # Predict VEGC for LHS samples if VEGC emulator is available
     y_vegc_lhs_pred = None
     if lr_vegc is not None:
-        y_vegc_lhs_pred = lr_vegc.predict(lhs_samples)
+        y_vegc_lhs_pred = lr_vegc.predict(lhs_samples_scaled)
         print(f"  VEGC range: {y_vegc.min():.4f} to {y_vegc.max():.4f}")
         print(f"  LHS predicted VEGC range: {y_vegc_lhs_pred.min():.4f} to {y_vegc_lhs_pred.max():.4f}")
     
     # Predict NPP for LHS samples if NPP emulator is available
     y_npp_lhs_pred = None
     if lr_npp is not None:
-        y_npp_lhs_pred = lr_npp.predict(lhs_samples)
+        y_npp_lhs_pred = lr_npp.predict(lhs_samples_scaled)
         print(f"  NPP range: {y_npp.min():.4f} to {y_npp.max():.4f}")
         print(f"  LHS predicted NPP range: {y_npp_lhs_pred.min():.4f} to {y_npp_lhs_pred.max():.4f}")
     
@@ -691,19 +893,19 @@ for region in REGIONS:
     param_samples = {}
     param_predictions = {}
     
-    for i, param in enumerate(params):
+    for i, param in enumerate(params_to_use):
         param_samples[param] = lhs_samples[:, i]
         param_predictions[param] = y_lhs_pred
     
     # Create dynamic subplot grid based on number of parameters
-    n_rows, n_cols = calculate_subplot_grid(len(params))
+    n_rows, n_cols = calculate_subplot_grid(len(params_to_use))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
-    axes = axes.flatten() if len(params) > 1 else [axes]
-    fig.suptitle(f'GPP{gpp_time_label} vs Parameters (colored by LAI) - {region.replace("_", " ").title()}', 
+    axes = axes.flatten() if len(params_to_use) > 1 else [axes]
+    fig.suptitle(f'GPP{gpp_time_label} vs Parameters (colored by ET) - {region.replace("_", " ").title()}', 
                  fontsize=16, fontweight='bold')
     
     scatter_emul = None  # Initialize outside loop
-    for idx, param in enumerate(params):
+    for idx, param in enumerate(params_to_use):
         ax = axes[idx]
         
         if param not in df.columns:
@@ -711,12 +913,12 @@ for region in REGIONS:
                    transform=ax.transAxes)
             continue
         
-        # Plot emulator predictions NOT within LAI bounds colored by predicted LAI
-        if np.any(~lai_within_bounds_mask):
+        # Plot emulator predictions NOT within LAI bounds colored by predicted ET
+        if np.any(~lai_within_bounds_mask) and lr_et is not None:
             scatter_emul = ax.scatter(param_samples[param][~lai_within_bounds_mask], 
                       param_predictions[param][~lai_within_bounds_mask], s=15, alpha=0.6, 
-                      c=y_lai_lhs_pred[~lai_within_bounds_mask], cmap='YlGn', edgecolors='none', zorder=1, 
-                      vmin=y_lai.min(), vmax=y_lai.max(),
+                      c=y_et_lhs_pred[~lai_within_bounds_mask], cmap='viridis', edgecolors='none', zorder=1, 
+                      vmin=y_et.min(), vmax=y_et.max(),
                       label='Emulator predictions')
         
         # Plot emulator predictions WITHIN LAI bounds only (not GPP) in pink
@@ -734,11 +936,11 @@ for region in REGIONS:
                       c='black', edgecolors='none', zorder=1.6,
                       label='Within LAI & GPP bounds')
         
-        # Plot GPP(2000) colored by actual LAI on top
+        # Plot GPP(2000) colored by actual ET on top
         ax.scatter(df[param], df[gpp_col], s=100, alpha=0.9, 
-                   c=df[lai_col] if lai_col in df.columns else df[gpp_col], 
-                   cmap='YlGn', edgecolors='black', linewidth=1.5, zorder=2, 
-                   vmin=y_lai.min(), vmax=y_lai.max(),
+                   c=df[et_col] if et_col in df.columns else df[gpp_col], 
+                   cmap='viridis', edgecolors='black', linewidth=1.5, zorder=2, 
+                   vmin=y_et.min(), vmax=y_et.max(),
                    label=f'Model GPP{gpp_time_label}')
         
         # Add observed GPP as horizontal line
@@ -804,12 +1006,12 @@ for region in REGIONS:
         
         ax.grid(True, alpha=0.3)
     
-    # Add colorbar for LAI values
+    # Add colorbar for ET values
     plt.tight_layout(rect=[0, 0, 0.95, 1])
     if scatter_emul is not None:
         cbar_ax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
         cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
-        cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
+        cbar.set_label('ET [W m⁻²]', fontsize=11, fontweight='bold')
     
     plt.tight_layout()
     output_file = OUTPUT_DIR_GPP / f"gpp_vs_parameters_{region}_{EMULATOR_TYPE}.png"
@@ -1250,16 +1452,16 @@ for region in REGIONS:
     # Create histogram plots showing parameter distributions from emulated space
     print(f"  Creating parameter distribution histograms...")
     
-    n_rows, n_cols = calculate_subplot_grid(len(params))
+    n_rows, n_cols = calculate_subplot_grid(len(params_to_use))
     fig_hist, axes_hist = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
-    axes_hist = axes_hist.flatten() if len(params) > 1 else [axes_hist]
+    axes_hist = axes_hist.flatten() if len(params_to_use) > 1 else [axes_hist]
     fig_hist.suptitle(f'Parameter Distributions from Emulated Space - {region.replace("_", " ").title()}', 
                       fontsize=16, fontweight='bold')
     
-    for idx, param in enumerate(params):
+    for idx, param in enumerate(params_to_use):
         ax_hist = axes_hist[idx]
         
-        param_idx = params.index(param)
+        param_idx = params_to_use.index(param)
         param_values_all = lhs_samples[:, param_idx]
         
         # Determine bins for histogram (using all samples)
@@ -1318,10 +1520,11 @@ if parameter_choices:
 else:
     print(f"\n  No constrained parameter choices found to save.")
 
-# Create plots of NPP(2000) vs parameters with emulator (colored by LAI)
-print("\n" + "="*60)
-print("Creating NPP(2000) vs parameter plots with emulator (colored by LAI)...")
-print("="*60)
+# Create plots of NPP(2000) vs parameters with emulator (colored by LAI) - skip in SP mode
+if not SP_MODE:
+    print("\n" + "="*60)
+    print("Creating NPP(2000) vs parameter plots with emulator (colored by LAI)...")
+    print("="*60)
 
 # Determine NPP column name based on ensemble
 if ens_n == 1:
@@ -1365,19 +1568,24 @@ for region in REGIONS:
     
     # Train emulator for NPP
     print(f"  Training NPP emulator ({EMULATOR_TYPE.upper()}) on {len(df_clean)} ensemble members...")
-    lr_npp = get_emulator()
-    lr_npp.fit(X, y)
+    
+    # Scale input features for better emulator performance
+    scaler_X_npp = StandardScaler()
+    X_scaled_npp = scaler_X_npp.fit_transform(X)
+    
+    lr_npp = get_emulator(n_dims=len(params))
+    lr_npp.fit(X_scaled_npp, y)
     
     # Train LAI emulator if LAI data is available
     lr_lai = None
     if lai_col in df_clean.columns:
         print(f"  Training LAI emulator ({EMULATOR_TYPE.upper()}) for coloring...")
-        lr_lai = get_emulator()
-        lr_lai.fit(X, y_lai)
+        lr_lai = get_emulator(n_dims=len(params))
+        lr_lai.fit(X_scaled_npp, y_lai)
     
     # Calculate R² and RMSE
-    y_pred = lr_npp.predict(X)
-    r2 = lr_npp.score(X, y)
+    y_pred = lr_npp.predict(X_scaled_npp)
+    r2 = lr_npp.score(X_scaled_npp, y)
     rmse = np.sqrt(np.mean((y - y_pred)**2))
     
     print(f"  NPP Emulator R²: {r2:.4f}")
@@ -1394,11 +1602,12 @@ for region in REGIONS:
         lhs_samples[param] = np.random.uniform(param_min, param_max, n_samples)
     
     X_lhs = np.column_stack([lhs_samples[param] for param in params])
-    y_lhs_pred = lr_npp.predict(X_lhs)
+    X_lhs_scaled = scaler_X_npp.transform(X_lhs)
+    y_lhs_pred = lr_npp.predict(X_lhs_scaled)
     
     # Predict LAI for LHS samples (for coloring)
     if lr_lai is not None:
-        y_lai_lhs_pred = lr_lai.predict(X_lhs)
+        y_lai_lhs_pred = lr_lai.predict(X_lhs_scaled)
     else:
         y_lai_lhs_pred = y_lhs_pred  # Fallback
     
@@ -1541,7 +1750,7 @@ for region in REGIONS:
     X = df_clean[params].values
     y_lai = df_clean[lai_col].values
     
-    lr_lai = get_emulator()
+    lr_lai = get_emulator(n_dims=len(params))
     lr_lai.fit(X, y_lai)
     print(f"  Using {EMULATOR_TYPE.upper()} emulator")
     
@@ -1788,7 +1997,7 @@ for region in REGIONS:
     
     if gpp_col_for_emul in df_clean.columns:
         y_gpp = df_clean[gpp_col_for_emul].values
-        lr_gpp_lai = get_emulator()
+        lr_gpp_lai = get_emulator(n_dims=len(params))
         lr_gpp_lai.fit(X, y_gpp)
         gpp_emul_pred = lr_gpp_lai.predict(lhs_emul)
         
@@ -1802,9 +2011,12 @@ for region in REGIONS:
             gpp_within_bounds_lai_emul = (gpp_emul_pred >= gpp_min_lai) & (gpp_emul_pred <= gpp_max_lai)
             print(f"  Emulator samples within GPP bounds (for LAI plots): {np.sum(gpp_within_bounds_lai_emul)}/{n_emulator_samples}")
     
-    # Get slatop values for coloring
-    slatop_idx = params.index('fates_leaf_slatop')
-    slatop_values = lhs_emul[:, slatop_idx]
+    # Get slatop values for coloring (if available)
+    slatop_values = None
+    use_slatop_coloring = 'fates_leaf_slatop' in params
+    if use_slatop_coloring:
+        slatop_idx = params.index('fates_leaf_slatop')
+        slatop_values = lhs_emul[:, slatop_idx]
     
     n_rows, n_cols = calculate_subplot_grid(len(params))
     fig_lai_params, axes_lai = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
@@ -1818,12 +2030,18 @@ for region in REGIONS:
         
         param_idx = params.index(param)
         
-        # Plot emulator samples NOT within GPP bounds colored by slatop
+        # Plot emulator samples NOT within GPP bounds, colored by slatop if available, otherwise grey
         if np.any(~gpp_within_bounds_lai_emul):
-            scatter_emul = ax.scatter(lhs_emul[~gpp_within_bounds_lai_emul, param_idx], 
-                      lai_emul_pred[~gpp_within_bounds_lai_emul], s=15, alpha=0.6, 
-                      c=slatop_values[~gpp_within_bounds_lai_emul], cmap='viridis', edgecolors='none', 
-                      label=f'Emulator samples', zorder=1)
+            if use_slatop_coloring:
+                scatter_emul = ax.scatter(lhs_emul[~gpp_within_bounds_lai_emul, param_idx], 
+                          lai_emul_pred[~gpp_within_bounds_lai_emul], s=15, alpha=0.6, 
+                          c=slatop_values[~gpp_within_bounds_lai_emul], cmap='viridis', edgecolors='none', 
+                          label=f'Emulator samples', zorder=1)
+            else:
+                scatter_emul = ax.scatter(lhs_emul[~gpp_within_bounds_lai_emul, param_idx], 
+                          lai_emul_pred[~gpp_within_bounds_lai_emul], s=15, alpha=0.6, 
+                          c='lightgrey', edgecolors='none', 
+                          label=f'Emulator samples', zorder=1)
         
         # Plot emulator samples WITHIN GPP bounds in green
         if np.any(gpp_within_bounds_lai_emul):
@@ -1872,9 +2090,9 @@ for region in REGIONS:
         ax.legend(loc='best', fontsize=9)
         ax.grid(True, alpha=0.3)
     
-    # Add colorbar for slatop values (using the last scatter_emul from the loop)
+    # Add colorbar for slatop values (using the last scatter_emul from the loop) - only if slatop is used
     plt.tight_layout(rect=[0, 0, 0.95, 1])
-    if scatter_emul is not None:
+    if scatter_emul is not None and use_slatop_coloring:
         cbar_ax = fig_lai_params.add_axes([0.96, 0.15, 0.02, 0.7])
         cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
         cbar.set_label('fates_leaf_slatop', fontsize=11, fontweight='bold')
@@ -1884,32 +2102,36 @@ for region in REGIONS:
     print(f"  Saved: {output_file_lai_params.name}")
     plt.close(fig_lai_params)
     
-    # Create second plot colored by VEGC emulator predictions
-    print(f"\n  Creating LAI vs parameters colored by VEGC emulator...")
-    
-    # Determine VEGC column name based on ensemble
-    vegc_col = 'FATES_VEGC_PPE_2000_V1' if ens_n == 1 else 'FATES_VEGC_PPE_V1'
-    
-    # Check if VEGC data is available
-    if vegc_col not in df_clean.columns:
-        print(f"    WARNING: VEGC column {vegc_col} not available for {region}, skipping VEGC-colored plot")
+    # Create second plot colored by VEGC or ET emulator predictions (depending on SP mode)
+    if SP_MODE:
+        print(f"\n  Creating LAI vs parameters colored by ET emulator (SP mode)...")
+        color_var = 'ET'
+        color_col = get_et_column(region, df_clean)
     else:
-        # Train VEGC emulator
-        y_vegc = df_clean[vegc_col].values
-        lr_vegc = get_emulator()
+        print(f"\n  Creating LAI vs parameters colored by VEGC emulator...")
+        color_var = 'VEGC'
+        color_col = 'FATES_VEGC_PPE_2000_V1' if ens_n == 1 else 'FATES_VEGC_PPE_V1'
+    
+    # Check if color data is available
+    if color_col not in df_clean.columns:
+        print(f"    WARNING: {color_var} column {color_col} not available for {region}, skipping {color_var}-colored plot")
+    else:
+        # Train color variable emulator
+        y_color = df_clean[color_col].values
+        lr_color = get_emulator(n_dims=len(params))
         print(f"  Using {EMULATOR_TYPE.upper()} emulator")
-        lr_vegc.fit(X, y_vegc)
+        lr_color.fit(X, y_color)
         
-        # Predict VEGC for the 1000 LHS samples
-        vegc_emul_pred = lr_vegc.predict(lhs_emul)
+        # Predict color variable for the 1000 LHS samples
+        color_emul_pred = lr_color.predict(lhs_emul)
         
-        print(f"    VEGC emulator R²: {lr_vegc.score(X, y_vegc):.4f}")
-        print(f"    Predicted VEGC range: {vegc_emul_pred.min():.4f} to {vegc_emul_pred.max():.4f}")
+        print(f"    {color_var} emulator R²: {lr_color.score(X, y_color):.4f}")
+        print(f"    Predicted {color_var} range: {color_emul_pred.min():.4f} to {color_emul_pred.max():.4f}")
         
         n_rows, n_cols = calculate_subplot_grid(len(params))
         fig_lai_vegc, axes_lai_vegc = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
         axes_lai_vegc = axes_lai_vegc.flatten() if len(params) > 1 else [axes_lai_vegc]
-        fig_lai_vegc.suptitle(f'{lai_label}(2000) vs Parameters (colored by VEGC emulator) ({YEAR_RANGE}) - {region.replace("_", " ").title()}',
+        fig_lai_vegc.suptitle(f'{lai_label}(2000) vs Parameters (colored by {color_var} emulator) ({YEAR_RANGE}) - {region.replace("_", " ").title()}',
                               fontsize=16, fontweight='bold')
         
         scatter_vegc = None  # Initialize outside loop
@@ -1918,16 +2140,16 @@ for region in REGIONS:
             
             param_idx = params.index(param)
             
-            # Plot emulator samples colored by predicted VEGC
+            # Plot emulator samples colored by predicted color variable
             scatter_vegc = ax.scatter(lhs_emul[:, param_idx], lai_emul_pred, s=15, alpha=0.6,
-                      c=vegc_emul_pred, cmap='RdYlBu_r', edgecolors='none',
+                      c=color_emul_pred, cmap='RdYlBu_r', edgecolors='none',
                       label=f'{n_emulator_samples} emulator samples')
             
-            # Plot actual ensemble members on top, colored by actual VEGC
-            ax.scatter(df_clean[param], y_lai, s=100, alpha=0.9, c=y_vegc,
+            # Plot actual ensemble members on top, colored by actual color variable
+            ax.scatter(df_clean[param], y_lai, s=100, alpha=0.9, c=y_color,
                       cmap='RdYlBu_r', edgecolors='black', linewidth=1.5, 
                       label='Ensemble members', zorder=3,
-                      vmin=vegc_emul_pred.min(), vmax=vegc_emul_pred.max())
+                      vmin=color_emul_pred.min(), vmax=color_emul_pred.max())
             
             # Add observational LAI as horizontal line
             if not np.isnan(obs_lai):
@@ -1957,14 +2179,18 @@ for region in REGIONS:
             ax.legend(loc='best', fontsize=9)
             ax.grid(True, alpha=0.3)
         
-        # Add colorbar for VEGC values
+        # Add colorbar for color variable values
         plt.tight_layout(rect=[0, 0, 0.95, 1])
         if scatter_vegc is not None:
             cbar_ax = fig_lai_vegc.add_axes([0.96, 0.15, 0.02, 0.7])
             cbar = plt.colorbar(scatter_vegc, cax=cbar_ax)
-            cbar.set_label('VEGC(2000) [kgC/m²]', fontsize=11, fontweight='bold')
+            if SP_MODE:
+                cbar.set_label('ET Annual Max [W/m²]', fontsize=11, fontweight='bold')
+            else:
+                cbar.set_label('VEGC(2000) [kgC/m²]', fontsize=11, fontweight='bold')
         
-        output_file_lai_vegc = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_colored_by_vegc_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
+        color_var_lower = color_var.lower()
+        output_file_lai_vegc = OUTPUT_DIR_LAI_EMULATOR / f"lai_vs_params_colored_by_{color_var_lower}_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
         fig_lai_vegc.savefig(output_file_lai_vegc, dpi=300, bbox_inches='tight')
         print(f"    Saved: {output_file_lai_vegc.name}")
         plt.close(fig_lai_vegc)
@@ -2064,7 +2290,7 @@ for region in REGIONS:
         y_cue = df_clean[f'CUE_{ensemble_name}'].values
         y_lai = df_clean[lai_col].values
         
-        lr_cue = get_emulator()
+        lr_cue = get_emulator(n_dims=len(params))
         print(f"  Using {EMULATOR_TYPE.upper()} emulator")
         lr_cue.fit(X, y_cue)
         
@@ -2141,6 +2367,586 @@ for region in REGIONS:
         fig_cue.savefig(output_file_cue, dpi=300, bbox_inches='tight')
         print(f"    Saved: {output_file_cue.name}")
         plt.close(fig_cue)
+
+# Create Evapotranspiration (ET) plots with observational data and emulator
+print("\n" + "="*60)
+print("Creating Evapotranspiration (ET) vs parameter plots with WECANN and CLASS observations and emulator...")
+print("="*60)
+
+# Create output directory for ET plots
+OUTPUT_DIR_ET = OUTPUT_DIR / "et"
+OUTPUT_DIR_ET.mkdir(parents=True, exist_ok=True)
+
+for region in REGIONS:
+    if region not in data:
+        continue
+    
+    df = data[region]
+    
+    # Use helper function to determine ET column
+    et_col = get_et_column(region, df)
+    if et_col is None:
+        print(f"\nWARNING: Missing ET column for {region}")
+        continue
+    
+    print(f"\nCreating ET plots for {region.replace('_', ' ').title()}")
+    print(f"  Using ET column: {et_col}")
+    
+    # Debug: Check observational data
+    if region in obs_et_regional_wecann and not np.isnan(obs_et_regional_wecann[region]):
+        print(f"  WECANN ET for {region}: {obs_et_regional_wecann[region]:.4f} W m-2")
+    if region in obs_et_regional_class and not np.isnan(obs_et_regional_class[region]):
+        print(f"  CLASS ET for {region}: {obs_et_regional_class[region]:.4f} W m-2")
+    
+    # Check if parameters have data
+    params_with_data = [p for p in params if p in df.columns and df[p].notna().any()]
+    
+    if len(params_with_data) == 0:
+        print(f"  WARNING: No parameter data available in CSV. Cannot create emulator or parameter plots.")
+        continue
+    
+    # Clean data - remove rows with NaN in parameters or ET
+    df_clean = df.dropna(subset=params_with_data + [et_col])
+    
+    if len(df_clean) < 3:
+        print(f"  WARNING: Not enough clean data points ({len(df_clean)}) for emulator. Skipping.")
+        continue
+    
+    # Use only params with data for the analysis
+    params_to_use = params_with_data
+    
+    # Prepare training data for emulator
+    X = df_clean[params_to_use].values
+    y_et = df_clean[et_col].values
+    
+    # Get data for coloring: GPP in SP mode, otherwise LAI
+    if SP_MODE:
+        # Use GPP for coloring in SP mode
+        gpp_col = get_gpp_column(region, df_clean)
+        if gpp_col and gpp_col in df_clean.columns:
+            y_color = df_clean[gpp_col].values
+            color_label = 'GPP'
+            print(f"  Using {gpp_col} for coloring (SP mode)")
+        else:
+            print(f"  WARNING: GPP column not available, using ET values for coloring")
+            y_color = y_et
+            color_label = 'ET'
+    else:
+        # Use LAI for coloring in normal mode
+        lai_col = get_lai_column(region, df_clean)
+        if lai_col in df_clean.columns:
+            y_color = df_clean[lai_col].values
+            color_label = 'LAI'
+            print(f"  Using {lai_col} for coloring")
+        else:
+            print(f"  WARNING: LAI column not available, using ET values for coloring")
+            y_color = y_et
+            color_label = 'ET'
+    
+    # Train emulator for ET
+    print(f"  Training ET emulator ({EMULATOR_TYPE.upper()}) on {len(df_clean)} ensemble members...")
+    
+    # Scale input features for better emulator performance
+    scaler_X_et = StandardScaler()
+    X_scaled_et = scaler_X_et.fit_transform(X)
+    
+    lr_et = get_emulator(n_dims=len(params_to_use))
+    lr_et.fit(X_scaled_et, y_et)
+    
+    # Train color emulator (GPP in SP mode, LAI otherwise)
+    lr_color = None
+    if color_label in ['GPP', 'LAI']:
+        lr_color = get_emulator(n_dims=len(params_to_use))
+        lr_color.fit(X_scaled_et, y_color)
+        print(f"  Training {color_label} emulator ({EMULATOR_TYPE.upper()}) for coloring...")
+    
+    # Evaluate emulator skill
+    y_pred_train = lr_et.predict(X_scaled_et)
+    r2 = 1 - np.sum((y_et - y_pred_train)**2) / np.sum((y_et - y_et.mean())**2)
+    rmse = np.sqrt(np.mean((y_et - y_pred_train)**2))
+    print(f"  ET Emulator R²: {r2:.4f}")
+    print(f"  ET Emulator RMSE: {rmse:.4f}")
+    
+    # Generate Latin Hypercube samples for emulator predictions
+    n_samples = 3000
+    sampler = qmc.LatinHypercube(d=len(params_to_use))
+    sample = sampler.random(n=n_samples)
+    
+    # Scale samples to parameter ranges
+    param_mins = X.min(axis=0)
+    param_maxs = X.max(axis=0)
+    lhs_samples = qmc.scale(sample, param_mins, param_maxs)
+    
+    # Scale LHS samples using the same scaler as training data
+    lhs_samples_scaled_et = scaler_X_et.transform(lhs_samples)
+    
+    # Predict ET for LHS samples
+    y_lhs_pred = lr_et.predict(lhs_samples_scaled_et)
+    
+    # Predict color variable for LHS samples
+    if lr_color is not None:
+        y_color_lhs_pred = lr_color.predict(lhs_samples_scaled_et)
+        print(f"  {color_label} range: {y_color.min():.4f} to {y_color.max():.4f}")
+        print(f"  LHS predicted {color_label} range: {y_color_lhs_pred.min():.4f} to {y_color_lhs_pred.max():.4f}")
+    else:
+        y_color_lhs_pred = y_lhs_pred  # Fallback to ET
+    
+    print(f"  ET range: {y_et.min():.4f} to {y_et.max():.4f}")
+    print(f"  LHS predicted ET range: {y_lhs_pred.min():.4f} to {y_lhs_pred.max():.4f}")
+    
+    # Debug: Print observation values for this region
+    if region in obs_et_regional_wecann and not np.isnan(obs_et_regional_wecann[region]):
+        print(f"  Will plot WECANN ET horizontal line at: {obs_et_regional_wecann[region]:.4f}")
+    if region in obs_et_regional_class and not np.isnan(obs_et_regional_class[region]):
+        print(f"  Will plot CLASS ET horizontal line at: {obs_et_regional_class[region]:.4f}")
+    
+    # Identify emulator samples within LAI boundaries (skip in SP mode)
+    lai_within_bounds_mask = np.zeros(len(y_color_lhs_pred), dtype=bool)
+    if not SP_MODE and color_label == 'LAI':
+        # For ENTs, use summer LAI values
+        if region == 'ENTs':
+            obs_lai_modis_summer = obs_lai_regional.get(region, np.nan)
+            obs_lai_avhrr_summer = obs_lai_regional_avhrr_summer.get(region, np.nan)
+            
+            if not np.isnan(obs_lai_modis_summer) and not np.isnan(obs_lai_avhrr_summer):
+                lai_min = min(obs_lai_modis_summer, obs_lai_avhrr_summer)
+                lai_max = max(obs_lai_modis_summer, obs_lai_avhrr_summer)
+                lai_within_bounds_mask = (y_color_lhs_pred >= lai_min) & (y_color_lhs_pred <= lai_max)
+                n_within_bounds = np.sum(lai_within_bounds_mask)
+                print(f"  LAI boundaries (using summer): [{lai_min:.4f}, {lai_max:.4f}]")
+                print(f"  Emulator samples within LAI bounds: {n_within_bounds}/{len(y_color_lhs_pred)}")
+        else:
+            obs_lai_modis = obs_lai_regional.get(region, np.nan)
+            obs_lai_avhrr_val = obs_lai_regional_avhrr.get(region, np.nan)
+            
+            if not np.isnan(obs_lai_modis) and not np.isnan(obs_lai_avhrr_val):
+                lai_min = min(obs_lai_modis, obs_lai_avhrr_val)
+                lai_max = max(obs_lai_modis, obs_lai_avhrr_val)
+                lai_within_bounds_mask = (y_color_lhs_pred >= lai_min) & (y_color_lhs_pred <= lai_max)
+                n_within_bounds = np.sum(lai_within_bounds_mask)
+                print(f"  LAI boundaries: [{lai_min:.4f}, {lai_max:.4f}]")
+                print(f"  Emulator samples within LAI bounds: {n_within_bounds}/{len(y_color_lhs_pred)}")
+    
+    # Identify emulator samples within BOTH LAI and ET boundaries
+    et_lai_within_bounds_mask = np.zeros(len(y_color_lhs_pred), dtype=bool)
+    gpp_within_bounds_mask = np.zeros(len(y_color_lhs_pred), dtype=bool)
+    
+    # Get ET observations
+    obs_et_wecann = obs_et_regional_wecann.get(region, np.nan)
+    obs_et_class_val = obs_et_regional_class.get(region, np.nan)
+    
+    if not np.isnan(obs_et_wecann) and not np.isnan(obs_et_class_val):
+        # Define ET boundaries as min and max of the two observations
+        et_min = min(obs_et_wecann, obs_et_class_val)
+        et_max = max(obs_et_wecann, obs_et_class_val)
+        et_within_bounds = (y_lhs_pred >= et_min) & (y_lhs_pred <= et_max)
+        
+        # Samples within BOTH LAI and ET bounds
+        if np.any(lai_within_bounds_mask):
+            et_lai_within_bounds_mask = lai_within_bounds_mask & et_within_bounds
+            n_within_both = np.sum(et_lai_within_bounds_mask)
+            print(f"  ET boundaries: [{et_min:.4f}, {et_max:.4f}]")
+            print(f"  Emulator samples within BOTH LAI and ET bounds: {n_within_both}/{len(y_color_lhs_pred)}")
+    
+    # Identify samples within observed GPP bounds (for black highlighting)
+    # Get GPP observations based on region type
+    if region == 'ENTs':
+        obs_gpp_fluxcom = obs_gpp_regional_fluxcom_annual_max.get(region, np.nan)
+        obs_gpp_wecann_val = obs_gpp_regional_wecann_annual_max.get(region, np.nan)
+    else:
+        obs_gpp_fluxcom = obs_gpp_regional.get(region, np.nan)
+        obs_gpp_wecann_val = obs_gpp_regional_wecann.get(region, np.nan)
+    
+    if not np.isnan(obs_gpp_fluxcom) and not np.isnan(obs_gpp_wecann_val) and color_label == 'GPP':
+        # Define GPP boundaries as min and max of the two observations
+        gpp_min = min(obs_gpp_fluxcom, obs_gpp_wecann_val)
+        gpp_max = max(obs_gpp_fluxcom, obs_gpp_wecann_val)
+        gpp_within_bounds_mask = (y_color_lhs_pred >= gpp_min) & (y_color_lhs_pred <= gpp_max)
+        n_gpp_within = np.sum(gpp_within_bounds_mask)
+        print(f"  GPP boundaries: [{gpp_min:.4f}, {gpp_max:.4f}]")
+        print(f"  Emulator samples within observed GPP bounds: {n_gpp_within}/{len(y_color_lhs_pred)}")
+    
+    # Create dynamic subplot grid based on number of parameters
+    n_rows, n_cols = calculate_subplot_grid(len(params_to_use))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
+    axes = axes.flatten() if len(params_to_use) > 1 else [axes]
+    fig.suptitle(f'Evapotranspiration (EFLX_LH_TOT) vs Parameters ({YEAR_RANGE}) - {region.replace("_", " ").title()}',
+                fontsize=16, fontweight='bold')
+    
+    for idx, param in enumerate(params_to_use):
+        ax = axes[idx]
+        
+        param_idx = params_to_use.index(param)
+        
+        # Plot emulator samples colored by predicted color variable (GPP in SP mode, LAI otherwise)
+        cmap_choice = 'viridis' if color_label == 'GPP' else 'YlGn'
+        scatter_emul = ax.scatter(lhs_samples[:, param_idx], y_lhs_pred, s=15, alpha=0.4,
+                  c=y_color_lhs_pred, cmap=cmap_choice, edgecolors='none',
+                  label=f'{n_samples} emulator samples', vmin=y_color.min(), vmax=y_color.max())
+        
+        # Highlight samples within LAI bounds
+        if np.any(lai_within_bounds_mask):
+            ax.scatter(lhs_samples[lai_within_bounds_mask, param_idx], 
+                      y_lhs_pred[lai_within_bounds_mask], 
+                      s=15, alpha=0.7, c='orange', edgecolors='none',
+                      label=f'Within LAI bounds ({np.sum(lai_within_bounds_mask)})', zorder=2)
+        
+        # Highlight samples within observed GPP bounds (black dots)
+        if np.any(gpp_within_bounds_mask):
+            ax.scatter(lhs_samples[gpp_within_bounds_mask, param_idx],
+                      y_lhs_pred[gpp_within_bounds_mask],
+                      s=20, alpha=0.8, c='black', edgecolors='none',
+                      label=f'Within observed GPP bounds ({np.sum(gpp_within_bounds_mask)})', zorder=4)
+        
+        # Highlight samples within BOTH LAI and ET bounds (yellow edge)
+        if np.any(et_lai_within_bounds_mask):
+            ax.scatter(lhs_samples[et_lai_within_bounds_mask, param_idx],
+                      y_lhs_pred[et_lai_within_bounds_mask],
+                      s=20, alpha=0.9, c='magenta', edgecolors='yellow', linewidth=0.5,
+                      label=f'Within LAI & ET bounds ({np.sum(et_lai_within_bounds_mask)})', zorder=3)
+        
+        # Plot actual ensemble members on top, colored by actual color variable
+        ax.scatter(df_clean[param], y_et, s=120, alpha=0.9, c=y_color,
+                  cmap=cmap_choice, edgecolors='black', linewidth=2, 
+                  label='Ensemble members', zorder=5,
+                  vmin=y_color.min(), vmax=y_color.max())
+        
+        # Add observational ET as horizontal lines with grey shading between them
+        if not np.isnan(obs_et_wecann) and not np.isnan(obs_et_class_val):
+            # Add grey shading between the two observational estimates
+
+            et_min = min(obs_et_wecann, obs_et_class_val)
+            et_max = max(obs_et_wecann, obs_et_class_val)
+            ax.axhspan(et_min, et_max, color='gray', alpha=0.2, zorder=0)
+
+         
+            
+            # Add horizontal lines for each observation
+            ax.axhline(obs_et_wecann, color='blue', linestyle='--', linewidth=2.5,
+                      alpha=0.8, label=f'WECANN ET: {obs_et_wecann:.2f}', zorder=2)
+            ax.axhline(obs_et_class_val, color='purple', linestyle=':', linewidth=2.5,
+                      alpha=0.8, label=f'CLASS ET: {obs_et_class_val:.2f}', zorder=2)
+        elif not np.isnan(obs_et_wecann):
+            ax.axhline(obs_et_wecann, color='blue', linestyle='--', linewidth=2.5,
+                      alpha=0.8, label=f'WECANN ET: {obs_et_wecann:.2f}', zorder=2)
+        elif not np.isnan(obs_et_class_val):
+            ax.axhline(obs_et_class_val, color='purple', linestyle=':', linewidth=2.5,
+                      alpha=0.8, label=f'CLASS ET: {obs_et_class_val:.2f}', zorder=2)
+        
+        # Add ensemble labels
+        for i, row_data in enumerate(df_clean.iterrows()):
+            _, row = row_data
+            ax.annotate(f"n{int(row['ensemble_member']):02d}",
+                       (row[param], y_et[i]),
+                       fontsize=8, ha='center', va='bottom', fontweight='bold',
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
+                                edgecolor='none', alpha=0.7))
+        
+        ax.set_xlabel(param.replace('fates_', '').replace('_', ' '), 
+                     fontsize=11, fontweight='bold')
+        ax.set_ylabel('ET (EFLX_LH_TOT) [W m⁻²]', fontsize=11, fontweight='bold')
+        ax.legend(loc='best', fontsize=8)
+        ax.grid(True, alpha=0.3)
+    
+    # Add colorbar for color values
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
+    if 'scatter_emul' in locals():
+        cbar_ax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
+        cbar = plt.colorbar(scatter_emul, cax=cbar_ax)
+        if color_label == 'GPP':
+            cbar.set_label('GPP [gC m⁻² day⁻¹]', fontsize=11, fontweight='bold')
+        elif color_label == 'LAI':
+            cbar.set_label('LAI [m²/m²]', fontsize=11, fontweight='bold')
+        else:
+            cbar.set_label('ET [W m⁻²]', fontsize=11, fontweight='bold')
+    
+    output_file = OUTPUT_DIR_ET / f"et_vs_params_with_emulator_{YEAR_RANGE}_{region}_{EMULATOR_TYPE}.png"
+    fig.savefig(output_file, dpi=300, bbox_inches='tight')
+    print(f"  Saved: {output_file.name}")
+    plt.close(fig)
+
+print("\n" + "="*60)
+print("CREATING 3D PLOTS: Vcmax vs Medlyn Intercept vs GPP/ET/GPP_ET_ratio")
+print("="*60)
+
+# Create output directory for 3D plots
+OUTPUT_DIR_3D = OUTPUT_DIR / "3d_plots"
+OUTPUT_DIR_3D.mkdir(parents=True, exist_ok=True)
+
+# Check if required parameters are available
+has_vcmax = 'fates_leaf_vcmax25top' in params
+has_medlyn_intercept = 'fates_leaf_stomatal_intercept' in params
+has_medlyn_slope = 'fates_leaf_stomatal_slope_medlyn' in params
+
+if has_vcmax and has_medlyn_intercept:
+    print("\nBoth Vcmax and Medlyn Intercept parameters available - creating 3D plots...")
+    if has_medlyn_slope:
+        print("  Medlyn slope available - will use for color coding")
+    else:
+        print("  Medlyn slope NOT available - will use z-axis values for color coding")
+    
+    for region in REGIONS:
+        if region not in data:
+            print(f"  Skipping {region} (no data available)")
+            continue
+        
+        df = data[region]
+        
+        # Get required columns
+        vcmax_col = 'fates_leaf_vcmax25top'
+        medlyn_col = 'fates_leaf_stomatal_intercept'
+        medlyn_slope_col = 'fates_leaf_stomatal_slope_medlyn'
+        gpp_col = get_gpp_column(region, df)
+        et_col = get_et_column(region, df)
+        
+        # Check if all columns exist
+        if vcmax_col not in df.columns or medlyn_col not in df.columns:
+            print(f"  Skipping {region} (missing Vcmax or Medlyn Intercept)")
+            continue
+        
+        if gpp_col is None or gpp_col not in df.columns:
+            print(f"  Skipping {region} (missing GPP column)")
+            continue
+        
+        if et_col is None or et_col not in df.columns:
+            print(f"  Skipping {region} (missing ET column)")
+            continue
+        
+        # Clean data - remove any rows with NaN in required columns
+        cols_to_check = [vcmax_col, medlyn_col, gpp_col, et_col, 'ensemble_member']
+        if has_medlyn_slope and medlyn_slope_col in df.columns:
+            cols_to_check.append(medlyn_slope_col)
+        
+        df_clean = df[cols_to_check].dropna()
+        
+        if len(df_clean) == 0:
+            print(f"  Skipping {region} (no valid data after cleaning)")
+            continue
+        
+        print(f"\n  Creating 3D plots for {region} with {len(df_clean)} ensemble members...")
+        
+        # Extract data
+        vcmax = df_clean[vcmax_col].values
+        medlyn = df_clean[medlyn_col].values
+        gpp = df_clean[gpp_col].values
+        et = df_clean[et_col].values
+        gpp_et_ratio = gpp / et  # GPP/ET ratio
+        ensemble_members = df_clean['ensemble_member'].values
+        
+        # Get Medlyn slope for color coding if available
+        if has_medlyn_slope and medlyn_slope_col in df_clean.columns:
+            medlyn_slope = df_clean[medlyn_slope_col].values
+            use_slope_color = True
+            print(f"    Using Medlyn slope for color coding (range: {medlyn_slope.min():.2f} - {medlyn_slope.max():.2f})")
+        else:
+            medlyn_slope = None
+            use_slope_color = False
+            print(f"    Using z-axis values for color coding")
+        
+        # Get observational ranges for GPP and ET
+        # For GPP: use annual max for ENTs, regular for others (consistent with GPP plots)
+        # For ET: use regular values for all regions (consistent with ET_vs_params plots)
+        if region == 'ENTs':
+            obs_gpp_fluxcom = obs_gpp_regional_fluxcom_annual_max.get(region, np.nan)
+            obs_gpp_wecann_val = obs_gpp_regional_wecann_annual_max.get(region, np.nan)
+        else:
+            obs_gpp_fluxcom = obs_gpp_regional.get(region, np.nan)
+            obs_gpp_wecann_val = obs_gpp_regional_wecann.get(region, np.nan)
+        
+        # For ET, always use regular values (not annual max) for consistency with ET_vs_params plots
+        obs_et_wecann = obs_et_regional_wecann.get(region, np.nan)
+        obs_et_class_val = obs_et_regional_class.get(region, np.nan)
+        
+        # Calculate GPP range
+        gpp_obs_available = not np.isnan(obs_gpp_fluxcom) and not np.isnan(obs_gpp_wecann_val)
+        if gpp_obs_available:
+            gpp_min_obs = min(obs_gpp_fluxcom, obs_gpp_wecann_val)
+            gpp_max_obs = max(obs_gpp_fluxcom, obs_gpp_wecann_val)
+            print(f"    GPP observed range: [{gpp_min_obs:.2f}, {gpp_max_obs:.2f}] gC m⁻² day⁻¹")
+        
+        # Calculate ET range
+        et_obs_available = not np.isnan(obs_et_wecann) and not np.isnan(obs_et_class_val)
+        if et_obs_available:
+            et_min_obs = min(obs_et_wecann, obs_et_class_val)
+            et_max_obs = max(obs_et_wecann, obs_et_class_val)
+            print(f"    ET observed range: [{et_min_obs:.2f}, {et_max_obs:.2f}] W m⁻²")
+        
+        # Create figure with 3 subplots
+        fig = plt.figure(figsize=(20, 6))
+        
+        # Determine color values and colormap
+        if use_slope_color:
+            color_vals = medlyn_slope
+            cmap = 'RdYlGn_r'
+            color_label = 'Medlyn Slope'
+        else:
+            color_vals = gpp  # Will be overridden for each subplot
+            cmap = 'viridis'
+            color_label = 'Value'
+        
+        # Subplot 1: Vcmax vs Medlyn Intercept vs GPP
+        ax1 = fig.add_subplot(131, projection='3d')
+        color_vals1 = medlyn_slope if use_slope_color else gpp
+        scatter1 = ax1.scatter(vcmax, medlyn, gpp, c=color_vals1, cmap=cmap, 
+                              s=100, alpha=0.7, edgecolors='black', linewidth=1.5)
+        ax1.set_xlabel('Vcmax25top [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax1.set_ylabel('Medlyn Intercept [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax1.set_zlabel(f'{get_gpp_label(region)} [gC m⁻² day⁻¹]', fontsize=10, fontweight='bold')
+        ax1.set_title(f'GPP vs Vcmax & Medlyn Intercept', fontsize=12, fontweight='bold')
+        cbar1 = plt.colorbar(scatter1, ax=ax1, pad=0.1, shrink=0.8)
+        cbar1.set_label(color_label if use_slope_color else 'GPP [gC m⁻² day⁻¹]', fontsize=9)
+        
+        # Add observed GPP range as horizontal planes
+        if gpp_obs_available:
+            xx, yy = np.meshgrid(np.linspace(vcmax.min(), vcmax.max(), 10),
+                                np.linspace(medlyn.min(), medlyn.max(), 10))
+            ax1.plot_surface(xx, yy, np.full_like(xx, gpp_min_obs), alpha=0.15, color='blue')
+            ax1.plot_surface(xx, yy, np.full_like(xx, gpp_max_obs), alpha=0.15, color='blue')
+            
+            # Determine which observation is min and which is max
+            if obs_gpp_fluxcom < obs_gpp_wecann_val:
+                gpp_min_label = f'FLUXCOM: {obs_gpp_fluxcom:.2f}'
+                gpp_max_label = f'WECANN: {obs_gpp_wecann_val:.2f}'
+            else:
+                gpp_min_label = f'WECANN: {obs_gpp_wecann_val:.2f}'
+                gpp_max_label = f'FLUXCOM: {obs_gpp_fluxcom:.2f}'
+            
+            # Add text labels for the observational planes
+            ax1.text(vcmax.max(), medlyn.max(), gpp_min_obs, gpp_min_label,
+                    fontsize=9, fontweight='bold', color='blue', ha='left', va='bottom',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='blue', alpha=0.7))
+            ax1.text(vcmax.max(), medlyn.max(), gpp_max_obs, gpp_max_label,
+                    fontsize=9, fontweight='bold', color='blue', ha='left', va='top',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='blue', alpha=0.7))
+            
+            print(f"    GPP obs - FLUXCOM: {obs_gpp_fluxcom:.2f}, WECANN: {obs_gpp_wecann_val:.2f}")
+        
+        # Add ensemble member labels
+        for i in range(len(vcmax)):
+            ax1.text(vcmax[i], medlyn[i], gpp[i], f'n{int(ensemble_members[i]):02d}',
+                    fontsize=7, ha='center', va='bottom')
+        
+        # Add default parameter marker
+        if default_params and vcmax_col in default_params and medlyn_col in default_params:
+            if region in default_params[vcmax_col] and region in default_params[medlyn_col]:
+                default_vcmax = default_params[vcmax_col][region]
+                default_medlyn = default_params[medlyn_col][region]
+                # Use middle of GPP range for z-position since we don't have default output
+                default_z = (gpp.min() + gpp.max()) / 2
+                ax1.scatter([default_vcmax], [default_medlyn], [default_z], 
+                           marker='*', s=500, c='red', edgecolors='black', linewidth=2,
+                           zorder=10, label='Default params')
+                ax1.text(default_vcmax, default_medlyn, default_z, 'DEFAULT',
+                        fontsize=8, fontweight='bold', ha='center', va='bottom', color='red',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', edgecolor='red', alpha=0.8))
+                print(f"    Default params - Vcmax: {default_vcmax:.2f}, Medlyn Intercept: {default_medlyn:.4f}")
+        
+        # Subplot 2: Vcmax vs Medlyn Intercept vs ET
+        ax2 = fig.add_subplot(132, projection='3d')
+        color_vals2 = medlyn_slope if use_slope_color else et
+        scatter2 = ax2.scatter(vcmax, medlyn, et, c=color_vals2, cmap=cmap,
+                              s=100, alpha=0.7, edgecolors='black', linewidth=1.5)
+        ax2.set_xlabel('Vcmax25top [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax2.set_ylabel('Medlyn Intercept [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax2.set_zlabel('ET [W m⁻²]', fontsize=10, fontweight='bold')
+        ax2.set_title(f'ET vs Vcmax & Medlyn Intercept', fontsize=12, fontweight='bold')
+        cbar2 = plt.colorbar(scatter2, ax=ax2, pad=0.1, shrink=0.8)
+        cbar2.set_label(color_label if use_slope_color else 'ET [W m⁻²]', fontsize=9)
+        
+        # Add observed ET range as horizontal planes
+        if et_obs_available:
+            xx, yy = np.meshgrid(np.linspace(vcmax.min(), vcmax.max(), 10),
+                                np.linspace(medlyn.min(), medlyn.max(), 10))
+            ax2.plot_surface(xx, yy, np.full_like(xx, et_min_obs), alpha=0.15, color='purple')
+            ax2.plot_surface(xx, yy, np.full_like(xx, et_max_obs), alpha=0.15, color='purple')
+            
+            # Determine which observation is min and which is max
+            if obs_et_wecann < obs_et_class_val:
+                et_min_label = f'WECANN: {obs_et_wecann:.2f}'
+                et_max_label = f'CLASS: {obs_et_class_val:.2f}'
+            else:
+                et_min_label = f'CLASS: {obs_et_class_val:.2f}'
+                et_max_label = f'WECANN: {obs_et_wecann:.2f}'
+            
+            # Add text labels for the observational planes
+            ax2.text(vcmax.max(), medlyn.max(), et_min_obs, et_min_label,
+                    fontsize=9, fontweight='bold', color='purple', ha='left', va='bottom',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='purple', alpha=0.7))
+            ax2.text(vcmax.max(), medlyn.max(), et_max_obs, et_max_label,
+                    fontsize=9, fontweight='bold', color='purple', ha='left', va='top',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='purple', alpha=0.7))
+            
+            print(f"    ET obs - WECANN: {obs_et_wecann:.2f}, CLASS: {obs_et_class_val:.2f}")
+        
+        # Add ensemble member labels
+        for i in range(len(vcmax)):
+            ax2.text(vcmax[i], medlyn[i], et[i], f'n{int(ensemble_members[i]):02d}',
+                    fontsize=7, ha='center', va='bottom')
+        
+        # Add default parameter marker
+        if default_params and vcmax_col in default_params and medlyn_col in default_params:
+            if region in default_params[vcmax_col] and region in default_params[medlyn_col]:
+                default_vcmax = default_params[vcmax_col][region]
+                default_medlyn = default_params[medlyn_col][region]
+                # Use middle of ET range for z-position
+                default_z = (et.min() + et.max()) / 2
+                ax2.scatter([default_vcmax], [default_medlyn], [default_z], 
+                           marker='*', s=500, c='red', edgecolors='black', linewidth=2,
+                           zorder=10, label='Default params')
+                ax2.text(default_vcmax, default_medlyn, default_z, 'DEFAULT',
+                        fontsize=8, fontweight='bold', ha='center', va='bottom', color='red',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', edgecolor='red', alpha=0.8))
+        
+        # Subplot 3: Vcmax vs Medlyn Intercept vs GPP/ET
+        ax3 = fig.add_subplot(133, projection='3d')
+        color_vals3 = medlyn_slope if use_slope_color else gpp_et_ratio
+        scatter3 = ax3.scatter(vcmax, medlyn, gpp_et_ratio, c=color_vals3, cmap=cmap,
+                              s=100, alpha=0.7, edgecolors='black', linewidth=1.5)
+        ax3.set_xlabel('Vcmax25top [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax3.set_ylabel('Medlyn Intercept [µmol m⁻² s⁻¹]', fontsize=10, fontweight='bold')
+        ax3.set_zlabel('GPP/ET Ratio', fontsize=10, fontweight='bold')
+        ax3.set_title(f'GPP/ET vs Vcmax & Medlyn Intercept', fontsize=12, fontweight='bold')
+        cbar3 = plt.colorbar(scatter3, ax=ax3, pad=0.1, shrink=0.8)
+        cbar3.set_label(color_label if use_slope_color else 'GPP/ET Ratio', fontsize=9)
+        
+        # Add ensemble member labels
+        for i in range(len(vcmax)):
+            ax3.text(vcmax[i], medlyn[i], gpp_et_ratio[i], f'n{int(ensemble_members[i]):02d}',
+                    fontsize=7, ha='center', va='bottom')
+        
+        # Add default parameter marker
+        if default_params and vcmax_col in default_params and medlyn_col in default_params:
+            if region in default_params[vcmax_col] and region in default_params[medlyn_col]:
+                default_vcmax = default_params[vcmax_col][region]
+                default_medlyn = default_params[medlyn_col][region]
+                # Use middle of GPP/ET range for z-position
+                default_z = (gpp_et_ratio.min() + gpp_et_ratio.max()) / 2
+                ax3.scatter([default_vcmax], [default_medlyn], [default_z], 
+                           marker='*', s=500, c='red', edgecolors='black', linewidth=2,
+                           zorder=10, label='Default params')
+                ax3.text(default_vcmax, default_medlyn, default_z, 'DEFAULT',
+                        fontsize=8, fontweight='bold', ha='center', va='bottom', color='red',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', edgecolor='red', alpha=0.8))
+        
+        # Overall title
+        fig.suptitle(f'3D Parameter-Output Relationships - {region.replace("_", " ").title()}',
+                    fontsize=14, fontweight='bold', y=0.98)
+        
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        
+        # Save figure
+        output_file = OUTPUT_DIR_3D / f"3d_vcmax_medlyn_outputs_{YEAR_RANGE}_{region}.png"
+        fig.savefig(output_file, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {output_file.name}")
+        plt.close(fig)
+    
+    print(f"\n3D plots saved to: {OUTPUT_DIR_3D}")
+else:
+    print("\nSkipping 3D plots - required parameters (Vcmax and Medlyn Intercept) not available in this ensemble")
+    if not has_vcmax:
+        print("  Missing: fates_leaf_vcmax25top")
+    if not has_medlyn_intercept:
+        print("  Missing: fates_leaf_stomatal_intercept")
 
 print("\n" + "="*60)
 print("Analysis complete!")

@@ -14,7 +14,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 # Configuration
-ens_n = 3
+ens_n = 9
 
 BASE_PATH = "/datalake/NS9560K/rosief"
 OUTPUT_ROOT = "/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/"
@@ -25,6 +25,7 @@ if(ens_n==1):
     ensdir='ens_v1_soilc'
     PARAMETERS = ['fates_allom_l2fr', 'fates_maintresp_leaf_ryan1991_baserate', 
               'fates_allom_d2bl1', 'fates_leaf_slatop']
+    ctsm_vars = False  # CTSM parameter reading disabled for v1
     ENSEMBLE_MEMBERS = range(1, 17)  # n01 to n13
     output_dirname='ppe_2000_v1_soilc'
     YEARS = range(29, 30)  # Years 09 to 10
@@ -36,6 +37,7 @@ elif(ens_n==2):
     paramfilename='params_lhs_20251221_0039_'
     ensdir='ens_v1_c4g'
     PARAMETERS = ['fates_leaf_vcmax25top','fates_leaf_slatop','fates_turnover_leaf_canopy','fates_landuse_grazing_rate','fates_fire_cg_strikes',]
+    ctsm_vars = False  # CTSM parameter reading disabled for v2
     ENSEMBLE_MEMBERS = range(1, 21)  # n01 to n13
     output_dirname='ppe_2000_v1_c4g'
     YEARS = range(39, 40)  # Years 09 to 10
@@ -47,13 +49,86 @@ elif(ens_n==3):
      ensdir='ens_v3_ent'
      PARAMETERS = ['fates_stoich_nitr', 'fates_leaf_vcmax25top',
                   'fates_allom_d2bl1', 'fates_leaf_slatop','fates_grperc']
+     ctsm_vars = False  # CTSM parameter reading disabled for v3
      ENSEMBLE_MEMBERS = range(1, 16)  # n01 to n13
      output_dirname='ppe_2000_v3_ent'
      YEARS = range(29,30)  # Years 09 to 10
      casename = 'noresm_beta07_crujra_ppe_2000_v3_'
 
-outputdir = OUTPUT_ROOT+output_dirname             
-VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC','EFLX_LH_TOT']
+elif(ens_n==4):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP_scripts/PPE_param_files/lhs_params/"
+     paramfilename='params_lhs_20260106_1332_'
+     PARAMETERS = [ 'fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_fnps']
+     ctsm_vars = False  # CTSM parameter reading disabled for v4
+     ENSEMBLE_MEMBERS = range(1, 9)  # n01 to n13                                                         
+     output_dirname='ppe_2000_v4_SP'
+     YEARS = range(8,9)  # Years 09 to 10                                                                   
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v4_'
+
+elif(ens_n==5):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP2_scripts/PPE_param_files/lhs_params/"
+     paramfilename='fates_params_lhs_20260106_1808_'
+     ctsm_paramfilename='ctsm_params_lhs_20260106_1808_'
+     PARAMETERS = [ 'fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept']
+     ctsm_parameters = ['d_max','frac_sat_soil_dsl_init']
+     ctsm_vars = True  # Enable CTSM parameter reading for v5
+     ENSEMBLE_MEMBERS = range(1, 11)  # n01 to n13                                                         
+     output_dirname='ppe_2000_v5_SP2'
+     YEARS = range(8,9)  # Years 09 to 10                                                                   
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v5_'
+
+elif(ens_n==6):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP3_scripts/PPE_param_files/lhs_params/"
+     paramfilename='fates_params_lhs_20260107_1357_'
+     ctsm_paramfilename='ctsm_params_lhs_20260107_1357_'
+     PARAMETERS = ['fates_rad_leaf_clumping_index','fates_turb_leaf_diameter','fates_maintresp_leaf_atkin2017_baserate']
+     ctsm_parameters = ['sucsat_sf','watsat_sf']
+     ctsm_vars = True  # Enable CTSM parameter reading for v5                                                 
+     ENSEMBLE_MEMBERS = range(1, 11)  # n01 to n13                                                            
+     output_dirname='ppe_2000_v6_SP3'
+     YEARS = range(8,9)  # Years 09 to 10                                                                     
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v5_'
+
+elif(ens_n==7):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP4_scripts/PPE_param_files/lhs_params/"
+     paramfilename='fates_params_lhs_20260116_1354_'
+     ctsm_paramfilename='ctsm_params_lhs_20260116_1354_'
+     PARAMETERS = ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept']
+     ctsm_parameters = ['maximum_leaf_wetted_fraction','liq_canopy_storage_scalar']
+     ctsm_vars = True  # Enable CTSM parameter reading for v5
+     ENSEMBLE_MEMBERS = range(1, 11)  # n01 to n13
+     output_dirname='ppe_2000_v7_SP4'
+     YEARS = range(8,9)  # Years 09 to 10
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v7_'
+     
+elif(ens_n==8):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP5_scripts/PPE_param_files/lhs_params/"
+     paramfilename='fates_params_lhs_20260123_1711_'
+     ctsm_paramfilename='ctsm_params_lhs_20260123_1711_'
+     PARAMETERS = ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept']
+     ctsm_parameters = ['maximum_leaf_wetted_fraction','liq_canopy_storage_scalar']
+     ctsm_vars = True  # Enable CTSM parameter reading for v5                                                                            
+     ENSEMBLE_MEMBERS = range(1, 11)  # n01 to n13                                                                                       
+     output_dirname='ppe_2000_v8_SP5'
+     YEARS = range(8,9)  # Years 09 to 10                                                                                                
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v8_'
+
+elif(ens_n==9):
+     PARAM_PATH = "/nird/home/rosief/gt/Run_NorESM_script/PPE_CRU_2000_SP6_scripts/PPE_param_files/lhs_params/"
+     paramfilename='fates_params_lhs_20260125_1828_'
+     ctsm_paramfilename='ctsm_params_lhs_20260125_1828_'
+     PARAMETERS = ['fates_leaf_vcmax25top','fates_leaf_stomatal_slope_medlyn','fates_leaf_stomatal_intercept']
+     ctsm_parameters = ['maximum_leaf_wetted_fraction']
+     ctsm_vars = True  # Enable CTSM parameter reading for v5
+     ENSEMBLE_MEMBERS = range(1, 9)  # n01 to n10
+     output_dirname='ppe_2000_v9_SP6'
+     YEARS = range(8,9)  # Years 09 to 10
+     casename = 'noresm_beta07_crujra_ppe_2000SP_v9_'     
+     
+outputdir = OUTPUT_ROOT+output_dirname
+
+
+VARIABLES = ['FATES_LAI', 'FATES_GPP', 'FATES_NPP','FATES_VEGC','EFLX_LH_TOT','QVEGT','QVEGE','QSOIL']
 
 # Define regions for analysis
 # Note: For global regions, use 0-360 longitude range
@@ -92,6 +167,12 @@ results_ppe_2000_v1_max_gpp = {region: {} for region in REGIONS.keys()}
 # Store parameter values: {parameter_name: {ensemble_member: array_of_pft_values}}
 
 param_values = {param: {} for param in PARAMETERS}
+
+# Store CTSM parameter values if ctsm_vars is enabled
+if ctsm_vars:
+    ctsm_param_values = {param: {} for param in ctsm_parameters}
+else:
+    ctsm_param_values = {}
 
 # Map regions to their PFT indices (0-based indexing)
 REGION_PFT_MAP = {
@@ -195,6 +276,43 @@ for n in ENSEMBLE_MEMBERS:
                 param_values[param][n] = np.nan  # Single value
             else:
                 param_values[param][n] = np.full(14, np.nan)  # Store NaN array for all PFTs
+
+# Read CTSM parameter values if enabled
+if ctsm_vars:
+    print("\n" + "="*60)
+    print("Reading CTSM parameter files...")
+    for n in ENSEMBLE_MEMBERS:
+        ctsm_param_file = f"{PARAM_PATH}/{ctsm_paramfilename}{n:03d}.nc"
+        try:
+            ds_ctsm_param = xr.open_dataset(ctsm_param_file)
+            print(f'\nEnsemble {n:02d} - CTSM param_file: {ctsm_param_file}')
+            
+            # Read all CTSM parameters
+            for param in ctsm_parameters:
+                if param in ds_ctsm_param:
+                    # Get parameter values
+                    param_array = ds_ctsm_param[param].values
+                    # Flatten if multi-dimensional
+                    if param_array.ndim > 1:
+                        param_array = param_array.flatten()
+                    
+                    # CTSM parameters are typically scalars or single values
+                    if param_array.ndim == 0:
+                        ctsm_param_values[param][n] = float(param_array)
+                        print(f"  {param}: single value = {ctsm_param_values[param][n]:.6f}")
+                    else:
+                        # Store first value if array
+                        ctsm_param_values[param][n] = float(param_array[0]) if len(param_array) > 0 else np.nan
+                        print(f"  {param}: using value = {ctsm_param_values[param][n]:.6f} (from {len(param_array)} values)")
+                else:
+                    print(f"  WARNING: {param} not found in CTSM file")
+                    ctsm_param_values[param][n] = np.nan
+            
+            ds_ctsm_param.close()
+        except Exception as e:
+            print(f"  ERROR reading {ctsm_param_file}: {str(e)}")
+            for param in ctsm_parameters:
+                ctsm_param_values[param][n] = np.nan
 
 print("\n" + "="*60)
 print("Loading PFT grid cells from pre-generated files...\n")
@@ -1121,6 +1239,16 @@ for region_name in REGIONS.keys():
                     param_list.append(np.nan)
             csv_data[param] = param_list
             print(f"    {param} values (PFT 1): {param_list[:5]}...")  # Show first 5
+    
+    # Add CTSM parameter values if enabled
+    if ctsm_vars:
+        for param in ctsm_parameters:
+            param_list = []
+            for n in ensemble_nums:
+                param_val = ctsm_param_values[param].get(n, np.nan)
+                param_list.append(param_val)
+            csv_data[param] = param_list
+            print(f"    {param} values (CTSM): {param_list[:5]}...")  # Show first 5
     
     # Add PPE_V1 variables
     for var in VARIABLES:
