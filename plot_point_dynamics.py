@@ -123,13 +123,16 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
 
     if(case==5):
         VAR_NAMES = ["FATES_VEGC_ABOVEGROUND_SZ"]
+        #VAR_NAMES = ["FATES_NPLANT_SZ"]
         #VAR_NAMES = ["FATES_VEGC_BASAL_AREA"]\
         CASE_NAME = VAR_NAMES[0]+'points'
+        BACKG_VAR="BTRAN"
+        fatesarea="FATES_AREA_PLANTS"
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
         UNIT_LABELS = {var: "cm2/ha" for var in VAR_NAMES}
-        YEAR_RANGE = (0, 20) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 12 # Process every Nth timestep 
-        tint=100  # time interval in ms
+        YEAR_RANGE = (0, 2) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 1 # Process every Nth timestep 
+        tint=200  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
         TREE_STYLE = "cloud"  # "christmas" for Christmas tree shape, "cloud" for cloud-shaped crowns
@@ -540,6 +543,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 # Set the entire figure background with a smooth gradient
                 # Create a custom colormap with more colors for smoother, constant vertical tone change
                 from matplotlib.colors import LinearSegmentedColormap
+                # Green gradient for main background
                 funky_colors = ['#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a', '#4caf50', '#43a047', '#388e3c', '#2e7d32', '#1b5e20']  # Smooth light to dark green
                 funky_cmap = LinearSegmentedColormap.from_list('funky_green', funky_colors)
                 fig.patch.set_facecolor('#c8e6c9')  # Base green color
@@ -574,6 +578,32 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         return "Unknown"
                     except Exception as e:
                         return "Unknown"
+                
+                def get_us_state(lat, lon):
+                    """Get US state name from lat/lon coordinates using cartopy"""
+                    try:
+                        import cartopy.io.shapereader as shpreader
+                        # Convert longitude to -180 to 180 range if needed
+                        if lon > 180:
+                            lon = lon - 360
+                        
+                        # Load US states shapefile
+                        shpfilename = shpreader.natural_earth(resolution='110m',
+                                                             category='cultural',
+                                                             name='admin_1_states_provinces')
+                        reader = shpreader.Reader(shpfilename)
+                        states = reader.records()
+                        point = Point(lon, lat)
+                        
+                        for state in states:
+                            # Only check US states
+                            if state.attributes.get('admin') == 'United States of America':
+                                if prep(state.geometry).contains(point):
+                                    return state.attributes['name']
+                        return None  # Not in USA
+                    except Exception as e:
+                        print(f"Error getting US state: {e}")
+                        return None
                 
                 # Initialize bar charts
                 bar_containers = []
@@ -759,7 +789,8 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     
                     ax.set_xlabel('Size Class: cm', fontsize=12, fontweight='bold')
                     ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
-                    ax.set_title('Year 0, Month 01', 
+                    display_name = VAR_NAME.replace('FATES_', '')
+                    ax.set_title(f'{display_name} - Year 0, Month 01', 
                                fontsize=14, fontweight='bold')
                     ax.set_xticks(x_pos)
                     ax.set_xticklabels(size_labels, rotation=45, ha='right')
@@ -767,10 +798,14 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     
                     # Add location info text to top right of this subplot
                     country_name = get_country(actual_lat, actual_lon)
-                    location_text = f"{country_name}\nLat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    us_state = get_us_state(actual_lat, actual_lon)
+                    if us_state:
+                        location_text = f"{us_state}, USA - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    else:
+                        location_text = f"{country_name} - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
                     ax.text(0.98, 0.98, location_text, transform=ax.transAxes, 
-                           fontsize=11, fontweight='bold', ha='right', va='top',
-                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), zorder=10)
+                           fontsize=9, fontweight='bold', ha='right', va='top',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8), zorder=10)
                     
                     # Set y-axis limit based on max across all timesteps and locations
                     ax.set_ylim(0, None)  # Will update after scanning data
@@ -802,14 +837,129 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             data = data * SCALING_FACTORS[VAR_NAME]
                             max_value = max(max_value, np.nanmax(data))
                 
+                # Add BTRAN boxes at the bottom of each subplot (in negative Y space)
+                btran_box_height = max_value * 0.1  # Height of BTRAN indicator box
+                btran_boxes = []  # Store references to BTRAN boxes for animation updates
+                temp_bars = []  # Store references to temperature bars for animation updates
+                temp_bar_texts = []  # Store references to temperature text labels
+                
                 for loc_idx, ax in enumerate(axs[:n_locations]):
-                    ax.set_ylim(0, max_value * 1.1)
+                    ax.set_ylim(-btran_box_height, max_value * 0.6)
                     # Update background gradient extent to cover full plot area
                     if len(ax.images) > 0:
                         # Create new gradient array properly sized for the actual y-range
                         gradient_array = np.linspace(0, 1, 512).reshape(512, 1)  # More steps for smoother gradient
                         ax.images[0].set_data(gradient_array)
                         ax.images[0].set_extent([-0.5, n_sizes - 0.5, 0, max_value * 1.1])
+                    
+                    # Add BTRAN indicator box at the bottom
+                    # Get initial BTRAN value for this location
+                    grid_idx, _, _, _ = location_indices[loc_idx]
+                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                        if BACKG_VAR in ds.variables:
+                            btran_data = ds[BACKG_VAR].isel(time=0)
+                            # Determine spatial dimension
+                            if 'ncol' in btran_data.dims:
+                                btran_val = btran_data.isel(ncol=grid_idx).values
+                            elif 'lndgrid' in btran_data.dims:
+                                btran_val = btran_data.isel(lndgrid=grid_idx).values
+                            else:
+                                btran_val = 0.5  # Default if spatial dim not found
+                            
+                            # Divide by FATES_AREA_PLANTS
+                            if fatesarea in ds.variables:
+                                fatesarea_data = ds[fatesarea].isel(time=0)
+                                if 'ncol' in fatesarea_data.dims:
+                                    fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
+                                elif 'lndgrid' in fatesarea_data.dims:
+                                    fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                                else:
+                                    fatesarea_val = 1.0
+                                if fatesarea_val > 0:
+                                    btran_val = btran_val / fatesarea_val
+                        else:
+                            print(f"Warning: {BACKG_VAR} not found in dataset")
+                            btran_val = 0.5  # Default value
+                    
+                    # Create blue box with intensity proportional to BTRAN (dark blue at 1, white at 0)
+                    # Use a blue color that scales from white (0) to dark blue (1)
+                    blue_intensity = btran_val  # 0 to 1
+                    box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)  # Map to blues colormap (0.1-1.0 range)
+                    
+                    btran_box = ax.fill_between(
+                        [-0.5, n_sizes - 0.5], 
+                        [-btran_box_height, -btran_box_height], 
+                        [0, 0],
+                        color=box_color, 
+                        alpha=0.8, 
+                        zorder=5,
+                        linewidth=2,
+                        edgecolor='navy'
+                    )
+                    btran_boxes.append(btran_box)
+                    
+                    # Add BTRAN label
+                    ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{BACKG_VAR}: {btran_val:.2f}', 
+                           ha='center', va='center', fontsize=10, fontweight='bold',
+                           color='darkblue', zorder=6)
+                    
+                    # Add temperature indicator as a red bar on the right side
+                    # Get initial TSA value for this location
+                    temp_var = 'TSA'
+                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                        if temp_var in ds.variables:
+                            temp_data = ds[temp_var].isel(time=0)
+                            # Determine spatial dimension
+                            if 'ncol' in temp_data.dims:
+                                temp_val = temp_data.isel(ncol=grid_idx).values
+                            elif 'lndgrid' in temp_data.dims:
+                                temp_val = temp_data.isel(lndgrid=grid_idx).values
+                            else:
+                                temp_val = 273.1  # Default 0°C in Kelvin
+                            
+                            # Convert from Kelvin to Celsius if needed
+                            temp_celsius = float(temp_val)
+                            if temp_celsius > 100:  # Likely in Kelvin
+                                temp_celsius = temp_celsius - 273.15
+                        else:
+                            print(f"Warning: {temp_var} not found in dataset")
+                            temp_celsius = 0.0  # Default value
+                    
+                    # Create red temperature bar on the right side
+                    # Map temperature to bar height: -20°C (min) -> 25°C (max) = 0 to max_value * 1.1
+                    temp_min, temp_max = -20, 25
+                    temp_range = temp_max - temp_min
+                    temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * 1.1
+                    temp_height = np.clip(temp_height, 0, max_value * 1.1)  # Clamp to plot range
+                    
+                    # Position bar on the right side of the plot
+                    temp_bar_x = n_sizes - 0.2  # Right side position
+                    temp_bar_width = 0.35  # Width of the bar
+                    
+                    # Create the red bar
+                    temp_bar = ax.fill_between(
+                        [temp_bar_x, temp_bar_x + temp_bar_width],
+                        [0, 0],
+                        [temp_height, temp_height],
+                        color='red',
+                        alpha=0.7,
+                        zorder=15,
+                        linewidth=2,
+                        edgecolor='darkred'
+                    )
+                    temp_bars.append(temp_bar)
+                    
+                    # Add temperature label that follows bar but stays within bounds
+                    # Position text at bar height, clamped to stay visible
+                    text_y_pos = np.clip(temp_height, 0, max_value * 1.0)
+                    # Position text further to the left, over the larger size classes
+                    text_x_pos = n_sizes - 2.0  # Further left, over the 100cm area
+                    temp_text = ax.text(text_x_pos, text_y_pos,
+                           f'{temp_celsius:.1f}°C',
+                           ha='center', va='center', fontsize=9, fontweight='bold',
+                           color='darkred', zorder=16,
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='darkred'))
+                    temp_bar_texts.append(temp_text)
                 
                 # Animation update function for bar charts
                 current_file = None
@@ -833,6 +983,92 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
                         ax = axs[loc_idx]
                         tree_collection, old_trees = tree_collections[loc_idx]
+                        
+                        # Update BTRAN box color
+                        if BACKG_VAR in current_ds.variables:
+                            btran_data = current_ds[BACKG_VAR].isel(time=time_idx)
+                            if 'ncol' in btran_data.dims:
+                                btran_val = btran_data.isel(ncol=grid_idx).values
+                            elif 'lndgrid' in btran_data.dims:
+                                btran_val = btran_data.isel(lndgrid=grid_idx).values
+                            else:
+                                btran_val = 0.5
+                            
+                            # Divide by FATES_AREA_PLANTS
+                            if fatesarea in current_ds.variables:
+                                fatesarea_data = current_ds[fatesarea].isel(time=time_idx)
+                                if 'ncol' in fatesarea_data.dims:
+                                    fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
+                                elif 'lndgrid' in fatesarea_data.dims:
+                                    fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                                else:
+                                    fatesarea_val = 1.0
+                                if fatesarea_val > 0:
+                                    btran_val = btran_val / fatesarea_val
+                        else:
+                            btran_val = 0.5
+                        
+                        # Update BTRAN box color (dark blue at 1, white at 0)
+                        blue_intensity = float(btran_val)
+                        box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)
+                        btran_boxes[loc_idx].set_color(box_color)
+                        
+                        # Update BTRAN text - find and update existing text
+                        # Remove old BTRAN text and add new one
+                        for text_obj in ax.texts:
+                            if BACKG_VAR in text_obj.get_text():
+                                text_obj.remove()
+                        ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{BACKG_VAR}: {btran_val:.2f}', 
+                               ha='center', va='center', fontsize=10, fontweight='bold',
+                               color='darkblue', zorder=6)
+                        
+                        # Update temperature bar height
+                        temp_var = 'TSA'
+                        if temp_var in current_ds.variables:
+                            temp_data = current_ds[temp_var].isel(time=time_idx)
+                            if 'ncol' in temp_data.dims:
+                                temp_val = temp_data.isel(ncol=grid_idx).values
+                            elif 'lndgrid' in temp_data.dims:
+                                temp_val = temp_data.isel(lndgrid=grid_idx).values
+                            else:
+                                temp_val = 273.1
+                            
+                            # Convert from Kelvin to Celsius if needed
+                            temp_celsius = float(temp_val)
+                            if temp_celsius > 100:  # Likely in Kelvin
+                                temp_celsius = temp_celsius - 273.15
+                        else:
+                            temp_celsius = 0.0
+                        
+                        # Update temperature bar height based on temperature
+                        temp_min, temp_max = -20, 25
+                        temp_range = temp_max - temp_min
+                        
+                        temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * 1.1
+                        
+                        temp_height = np.clip(temp_height, 0, max_value * 1.1)
+                        print('temp_height=', temp_height)
+                        # Update bar by removing and recreating (easier than modifying fill_between)
+                        temp_bars[loc_idx].remove()
+                        temp_bar_x = n_sizes - 0.2
+                        temp_bar_width = 0.35
+                        temp_bar = ax.fill_between(
+                            [temp_bar_x, temp_bar_x + temp_bar_width],
+                            [0, 0],
+                            [temp_height, temp_height],
+                            color='red',
+                            alpha=0.7,
+                            zorder=15,
+                            linewidth=2,
+                            edgecolor='darkred'
+                        )
+                        temp_bars[loc_idx] = temp_bar
+                        
+                        # Update temperature text to follow bar height but stay within bounds
+                        text_y_pos = np.clip(temp_height, 0, max_value * 1.0)
+                        text_x_pos = n_sizes - 2.0
+                        temp_bar_texts[loc_idx].set_position((text_x_pos, text_y_pos))
+                        temp_bar_texts[loc_idx].set_text(f'{temp_celsius:.1f}°C')
                         
                         # Get data for this location and timestep
                         var_data = current_ds[VAR_NAME].isel(time=time_idx)
@@ -867,6 +1103,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
                         year = actual_timestep // 12
                         month = actual_timestep % 12 + 1
+                        display_name = VAR_NAME.replace('FATES_', '')
                         ax.set_title(f'Year {year}, Month {month:02d}',
                                fontsize=14, fontweight='bold')
                 
