@@ -122,20 +122,21 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         vmaxv=98
 
     if(case==5):
-        CASE_NAME = "basal_area_points"
-        VAR_NAMES = ["FATES_BASALAREA_SZ"]
+        VAR_NAMES = ["FATES_VEGC_ABOVEGROUND_SZ"]
+        #VAR_NAMES = ["FATES_VEGC_BASAL_AREA"]\
+        CASE_NAME = VAR_NAMES[0]+'points'
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
-        YEAR_RANGE = (0, 60) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        UNIT_LABELS = {var: "cm2/ha" for var in VAR_NAMES}
+        YEAR_RANGE = (0, 20) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 12 # Process every Nth timestep 
         tint=100  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
-        UNIT_LABELS = {var: "m2/ha" for var in VAR_NAMES}
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
         TREE_STYLE = "cloud"  # "christmas" for Christmas tree shape, "cloud" for cloud-shaped crowns
-        TREE_WIDTH = 2.1  # Control variable for tree width (default is 0.3, higher = wider trees)
+        TREE_WIDTH = 1.5  # Control variable for tree width (default is 0.3, higher = wider trees)
         
         # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
-        PFT_LIST = ['bet','bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        PFT_LIST = ['bet','bdt','ent']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
         
         # Convert to list if single string
         if isinstance(PFT_LIST, str):
@@ -493,6 +494,15 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
                     print(f"Available dimensions in dataset: {list(ds.dims.keys())}")
                     
+                    # Get units from netcdf file if not already specified or if default
+                    if VAR_NAME not in UNIT_LABELS or UNIT_LABELS[VAR_NAME] == "cm2/ha":
+                        if hasattr(var_data, 'units'):
+                            UNIT_LABELS[VAR_NAME] = var_data.units
+                            print(f"Using units from netcdf: {var_data.units}")
+                        else:
+                            UNIT_LABELS[VAR_NAME] = "units"
+                            print("No units attribute found in netcdf file")
+                    
                     # Find the size dimension - look for common patterns
                     size_dim = None
                     for dim in var_data.dims:
@@ -516,14 +526,16 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         size_bounds = ds[size_bounds_var].values
                         size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
                     else:
-                        size_labels = [f"Size {i+1}" for i in range(n_sizes)]
+                        # Use the dimension values directly (e.g., diameter in cm)
+                        size_values = ds[size_dim].values
+                        size_labels = [f"{val:.0f}" for val in size_values]
                 
                 # Setup figure with subplots for each location
                 n_locations = len(location_indices)
-                n_cols = min(n_locations, 2)
-                n_rows = (n_locations + n_cols - 1) // n_cols
+                n_cols = 4
+                n_rows = 2
                 
-                fig, axs = plt.subplots(n_rows, n_cols, figsize=(10*n_cols, 6*n_rows))
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(14, 8))
                 
                 # Set the entire figure background with a smooth gradient
                 # Create a custom colormap with more colors for smoother, constant vertical tone change
@@ -568,7 +580,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 tree_collections = []  # Store tree patch collections for each subplot
                 x_pos = np.arange(n_sizes)
                 
-                def create_tree_shape(x_center, height, base_width=0.3, style="christmas"):
+                def create_tree_shape(x_center, height, base_width=0.3, style="christmas", pft_type=None):
                     """Create a tree-shaped polygon that scales with height
                     
                     Args:
@@ -576,9 +588,15 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         height: Height of the tree
                         base_width: Base width scaling factor
                         style: 'christmas' for Christmas tree or 'cloud' for cloud-shaped crown
+                        pft_type: PFT name for PFT-specific customization (e.g., 'bet', 'bdt')
                     """
                     if height <= 0:
                         return None  # No visible tree for zero values
+                    
+                    # Override style for specific PFTs
+                    if pft_type == "ent":
+                        style = "christmas"  # ENTs always use Christmas tree shape
+                    
                     # Scale tree width based on height
                     width_scale = 0.3 + (height / 100.0) * 0.5  # Gradually increase width
                     width = base_width * width_scale
@@ -588,8 +606,17 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     trunk_width = width * 0.15
                     
                     if style == "cloud":
-                        # Cloud-shaped crown for tropical tree canopy
-                        crown_height = height * 0.85
+                        # PFT-specific parameters for cloud-shaped canopy
+                        if pft_type == "bet":
+                            # Bet PFT: wider and less deep canopy with flat top
+                            crown_height = height * 0.65  # Shallower canopy (was 0.85)
+                            canopy_width_multiplier = 1.1  # Even wider canopy (was 0.85)
+                            trunk_height = height * 0.35  # Taller trunk to compensate
+                        else:
+                            # Default tropical tree parameters
+                            crown_height = height * 0.85
+                            canopy_width_multiplier = 0.6
+                        
                         crown_base = trunk_height
                         crown_top = height
                         
@@ -608,15 +635,23 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             angle = np.pi * i / n_points
                             
                             # Base ellipse shape for tropical canopy (wider than tall)
-                            x_offset = width * np.cos(angle) * 0.6  # Wide canopy
+                            x_offset = width * np.cos(angle) * canopy_width_multiplier
                             
                             # Height follows an elliptical arc with slight asymmetry
-                            base_height = crown_base + crown_height * (0.3 + 0.7 * np.sin(angle))
-                            
-                            # Add subtle bumps for natural look
-                            bump = crown_height * 0.08 * np.sin(angle * 5)  # Small natural variations
-                            
-                            y_pos = base_height + bump
+                            if pft_type == "bet":
+                                # Oak-like shape: rounded with multiple lobes
+                                # Base rounded shape
+                                base_height = crown_base + crown_height * np.sin(angle)
+                                # Add multiple large lobes for oak-like appearance (5-7 main lobes)
+                                lobes = crown_height * 0.18 * np.sin(angle * 6)
+                                # Add smaller variations for natural irregularity
+                                small_bumps = crown_height * 0.06 * np.sin(angle * 13)
+                                y_pos = base_height + lobes + small_bumps
+                            else:
+                                base_height = crown_base + crown_height * (0.3 + 0.7 * np.sin(angle))
+                                # Add subtle bumps for natural look
+                                bump = crown_height * 0.08 * np.sin(angle * 5)
+                                y_pos = base_height + bump
                             
                             vertices.append([x_center + x_offset, y_pos])
                         
@@ -711,7 +746,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     # Create tree-shaped patches for each bar
                     trees = []
                     for i, height in enumerate(data):
-                        tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE)
+                        tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE, pft_type=pft_name)
                         if tree is not None:
                             trees.append(tree)
                     
@@ -722,7 +757,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     tree_collections.append((tree_collection, trees))
                     bar_containers.append(trees)  # Store trees for update
                     
-                    ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
+                    ax.set_xlabel('Size Class: cm', fontsize=12, fontweight='bold')
                     ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
                     ax.set_title('Year 0, Month 01', 
                                fontsize=14, fontweight='bold')
@@ -734,7 +769,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     country_name = get_country(actual_lat, actual_lon)
                     location_text = f"{country_name}\nLat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
                     ax.text(0.98, 0.98, location_text, transform=ax.transAxes, 
-                           fontsize=16, fontweight='bold', ha='right', va='top',
+                           fontsize=11, fontweight='bold', ha='right', va='top',
                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), zorder=10)
                     
                     # Set y-axis limit based on max across all timesteps and locations
@@ -819,7 +854,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         # Create new tree shapes with updated heights
                         new_trees = []
                         for i, height in enumerate(data):
-                            tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE)
+                            tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE, pft_type=pft_name)
                             if tree is not None:
                                 new_trees.append(tree)
                         
