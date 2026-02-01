@@ -125,7 +125,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         CASE_NAME = "basal_area_points"
         VAR_NAMES = ["FATES_BASALAREA_SZ"]
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
-        YEAR_RANGE = (0, 20) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        YEAR_RANGE = (0, 60) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 12 # Process every Nth timestep 
         tint=100  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
@@ -545,6 +545,10 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     """Get country name from lat/lon coordinates using cartopy"""
                     try:
                         import cartopy.io.shapereader as shpreader
+                        # Convert longitude to -180 to 180 range if needed
+                        if lon > 180:
+                            lon = lon - 360
+                        
                         shpfilename = shpreader.natural_earth(resolution='110m',
                                                              category='cultural',
                                                              name='admin_0_countries')
@@ -558,14 +562,6 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         return "Unknown"
                     except Exception as e:
                         return "Unknown"
-                
-                # Create location info text for top right (using first location as example)
-                if location_indices:
-                    first_idx, first_lat, first_lon, first_name = location_indices[0]
-                    country_name = get_country(first_lat, first_lon)
-                    location_text = f"Lat: {first_lat:.2f}°, Lon: {first_lon:.2f}°\n{country_name}"
-                    fig.text(0.98, 0.96, location_text, fontsize=16, fontweight='bold',
-                            ha='right', va='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                 
                 # Initialize bar charts
                 bar_containers = []
@@ -592,9 +588,13 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     trunk_width = width * 0.15
                     
                     if style == "cloud":
-                        # Cloud-shaped crown using multiple rounded bumps
+                        # Cloud-shaped crown for tropical tree canopy
                         crown_height = height * 0.85
-                        n_bumps = 8  # Number of bumps to create cloud effect
+                        crown_base = trunk_height
+                        crown_top = height
+                        
+                        # Create a rounded, umbrella-like canopy using many points
+                        n_points = 40  # More points for smoother curve
                         
                         vertices = [
                             # Trunk
@@ -602,25 +602,25 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             [x_center - trunk_width/2, trunk_height],
                         ]
                         
-                        # Create cloud-like bumpy crown
-                        for i in range(n_bumps):
-                            angle_fraction = i / n_bumps
-                            # Create bumps using sine wave for smooth cloud appearance
-                            angle = np.pi * angle_fraction
+                        # Create smooth rounded crown using semi-ellipse with bumps
+                        for i in range(n_points + 1):
+                            # Angle from 0 to pi (left to right across canopy)
+                            angle = np.pi * i / n_points
                             
-                            # Height variation for cloud bumps
-                            bump_height = trunk_height + crown_height * (0.3 + 0.7 * np.sin(angle))
+                            # Base ellipse shape for tropical canopy (wider than tall)
+                            x_offset = width * np.cos(angle) * 0.6  # Wide canopy
                             
-                            # Width follows a rounded profile
-                            side_factor = -1 if angle_fraction <= 0.5 else 1
-                            bump_width = width/2 * np.sin(angle) * 1.2
+                            # Height follows an elliptical arc with slight asymmetry
+                            base_height = crown_base + crown_height * (0.3 + 0.7 * np.sin(angle))
                             
-                            if angle_fraction <= 0.5:
-                                vertices.append([x_center - bump_width, bump_height])
-                            else:
-                                vertices.append([x_center + bump_width, bump_height])
+                            # Add subtle bumps for natural look
+                            bump = crown_height * 0.08 * np.sin(angle * 5)  # Small natural variations
+                            
+                            y_pos = base_height + bump
+                            
+                            vertices.append([x_center + x_offset, y_pos])
                         
-                        # Back to trunk
+                        # Complete the shape back to trunk
                         vertices.append([x_center + trunk_width/2, trunk_height])
                         vertices.append([x_center + trunk_width/2, 0])
                         
@@ -724,11 +724,18 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     
                     ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
                     ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
-                    ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year 0, Month 01', 
+                    ax.set_title('Year 0, Month 01', 
                                fontsize=14, fontweight='bold')
                     ax.set_xticks(x_pos)
                     ax.set_xticklabels(size_labels, rotation=45, ha='right')
                     ax.grid(axis='y', alpha=0.3, zorder=1)
+                    
+                    # Add location info text to top right of this subplot
+                    country_name = get_country(actual_lat, actual_lon)
+                    location_text = f"{country_name}\nLat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    ax.text(0.98, 0.98, location_text, transform=ax.transAxes, 
+                           fontsize=16, fontweight='bold', ha='right', va='top',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), zorder=10)
                     
                     # Set y-axis limit based on max across all timesteps and locations
                     ax.set_ylim(0, None)  # Will update after scanning data
@@ -825,7 +832,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
                         year = actual_timestep // 12
                         month = actual_timestep % 12 + 1
-                        ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year {year}, Month {month:02d}',
+                        ax.set_title(f'Year {year}, Month {month:02d}',
                                fontsize=14, fontweight='bold')
                 
                     return [tree_collections[i][0] for i in range(len(tree_collections))]
