@@ -18,6 +18,8 @@ import shutil
 import sys
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+from shapely.geometry import Point
+from shapely.prepared import prep
 
 # Configuration
 DATA_PATH = "/datalake/NS9560K/rosief/"
@@ -123,32 +125,21 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         CASE_NAME = "basal_area_points"
         VAR_NAMES = ["FATES_BASALAREA_SZ"]
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
-        YEAR_RANGE = (0, 60) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        YEAR_RANGE = (0, 20) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 12 # Process every Nth timestep 
         tint=100  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         UNIT_LABELS = {var: "m2/ha" for var in VAR_NAMES}
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
         TREE_STYLE = "cloud"  # "christmas" for Christmas tree shape, "cloud" for cloud-shaped crowns
-        # Read locations from file (lat, lon, name)
-        LOCATIONS = []
-        with open('/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/bet_grid_cells.txt', 'r') as f:
-            site_count = 0
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('lat'):  # Skip empty lines and header
-                    continue
-                if site_count >= 8:  # Only read first 8 sites
-                    break
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        lat = float(parts[0])
-                        lon = float(parts[1])
-                        site_count += 1
-                        LOCATIONS.append((lat, lon, f"ENT{site_count}"))
-                    except ValueError:
-                        continue  # Skip lines that don't parse as numbers
+        TREE_WIDTH = 2.1  # Control variable for tree width (default is 0.3, higher = wider trees)
+        
+        # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
+        PFT_LIST = ['bet','bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        
+        # Convert to list if single string
+        if isinstance(PFT_LIST, str):
+            PFT_LIST = [PFT_LIST]
 
 
     if(case==6):
@@ -429,351 +420,443 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
             print("CREATING POINT-BASED BAR CHART ANIMATION")
             print("="*60)
             
-            # Find nearest grid points to requested locations
-            def find_nearest_point(target_lat, target_lon, lats, lons):
-                """Find the nearest grid point to target lat/lon"""
-                # Handle NaN values
-                valid_mask = ~(np.isnan(lats) | np.isnan(lons))
-                if not np.any(valid_mask):
-                    print("ERROR: All lat/lon coordinates are NaN!")
-                    return 0, np.nan, np.nan
+            # Loop through each PFT to create separate animations
+            for pft_name in PFT_LIST:
+                pft_upper = pft_name.upper()
+                print(f"\n{'='*60}")
+                print(f"Processing PFT: {pft_upper}")
+                print(f"{'='*60}\n")
                 
-                # Only compute distances for valid points
-                distances = np.full_like(lats, np.inf)
-                distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
-                                                (lons[valid_mask] - target_lon)**2)
-                idx = np.argmin(distances)
-                return idx, lats[idx], lons[idx]
+                # Read locations from PFT-specific file
+                pft_file = f'/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/{pft_name}_grid_cells.txt'
+                print(f"Reading locations from: {pft_file}")
+                
+                LOCATIONS = []
+                try:
+                    with open(pft_file, 'r') as f:
+                        site_count = 0
+                        for line in f:
+                            line = line.strip()
+                            if not line or line.startswith('lat'):  # Skip empty lines and header
+                                continue
+                            if site_count >= 8:  # Only read first 8 sites
+                                break
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                try:
+                                    lat = float(parts[0])
+                                    lon = float(parts[1])
+                                    site_count += 1
+                                    LOCATIONS.append((lat, lon, f"{pft_upper}{site_count}"))
+                                except ValueError:
+                                    continue  # Skip lines that don't parse as numbers
+                    print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
+                except FileNotFoundError:
+                    print(f"WARNING: File not found: {pft_file}")
+                    print(f"Skipping PFT: {pft_upper}")
+                    continue
+                
+                if not LOCATIONS:
+                    print(f"WARNING: No valid locations found for {pft_upper}")
+                    continue
             
-            location_indices = []
-            for target_lat, target_lon, name in LOCATIONS:
-                idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
-                location_indices.append((idx, actual_lat, actual_lon, name))
-                print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
+                # Find nearest grid points to requested locations
+                def find_nearest_point(target_lat, target_lon, lats, lons):
+                    """Find the nearest grid point to target lat/lon"""
+                    # Handle NaN values
+                    valid_mask = ~(np.isnan(lats) | np.isnan(lons))
+                    if not np.any(valid_mask):
+                        print("ERROR: All lat/lon coordinates are NaN!")
+                        return 0, np.nan, np.nan
+                    
+                    # Only compute distances for valid points
+                    distances = np.full_like(lats, np.inf)
+                    distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
+                                                    (lons[valid_mask] - target_lon)**2)
+                    idx = np.argmin(distances)
+                    return idx, lats[idx], lons[idx]
             
-            # Extract size dimension information
-            with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                VAR_NAME = VAR_NAMES[0]  # Assume single variable for point plots
-                var_data = ds[VAR_NAME]
+                location_indices = []
+                # Ensure lat/lon are arrays (they should be from var_metadata)
+                lats_array = var_metadata['lat']
+                lons_array = var_metadata['lon']
+                for target_lat, target_lon, name in LOCATIONS:
+                    idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lats_array, lons_array)
+                    location_indices.append((idx, actual_lat, actual_lon, name))
+                    print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
                 
-                print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
-                print(f"Available dimensions in dataset: {list(ds.dims.keys())}")
-                
-                # Find the size dimension - look for common patterns
-                size_dim = None
-                for dim in var_data.dims:
-                    dim_lower = dim.lower()
-                    if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
-                        size_dim = dim
-                        break
-                
-                if size_dim is None:
-                    print(f"ERROR: Could not find size dimension in variable {VAR_NAME}")
-                    print(f"Variable dimensions: {var_data.dims}")
-                    print(f"Looking for dimensions containing: 'size', 'sz', 'fates_levscls', or 'levscls'")
-                    exit(1)
-                
-                n_sizes = len(ds[size_dim])
-                print(f"Found size dimension '{size_dim}' with {n_sizes} bins")
-                
-                # Get size bin labels if available
-                if f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
-                    size_bounds_var = f"{size_dim}_bounds" if f"{size_dim}_bounds" in ds.variables else f"fates_{size_dim}_bounds"
-                    size_bounds = ds[size_bounds_var].values
-                    size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
-                else:
-                    size_labels = [f"Size {i+1}" for i in range(n_sizes)]
-            
-            # Setup figure with subplots for each location
-            n_locations = len(location_indices)
-            n_cols = min(n_locations, 2)
-            n_rows = (n_locations + n_cols - 1) // n_cols
-            
-            fig, axs = plt.subplots(n_rows, n_cols, figsize=(10*n_cols, 6*n_rows))
-            
-            # Set the entire figure background with a funky gradient
-            # Create a custom colormap for a funkier green gradient
-            from matplotlib.colors import LinearSegmentedColormap
-            funky_colors = ['#e8f5e9', '#a5d6a7', '#66bb6a', '#43a047', '#2e7d32']  # Light to dark green
-            funky_cmap = LinearSegmentedColormap.from_list('funky_green', funky_colors)
-            fig.patch.set_facecolor('#c8e6c9')  # Base green color
-            
-            if n_locations == 1:
-                axs = [axs]
-            else:
-                axs = axs.flatten()
-            
-            # Initialize bar charts
-            bar_containers = []
-            tree_collections = []  # Store tree patch collections for each subplot
-            x_pos = np.arange(n_sizes)
-            
-            def create_tree_shape(x_center, height, base_width=0.3, style="christmas"):
-                """Create a tree-shaped polygon that scales with height
-                
-                Args:
-                    x_center: X position of the tree center
-                    height: Height of the tree
-                    base_width: Base width scaling factor
-                    style: 'christmas' for Christmas tree or 'cloud' for cloud-shaped crown
-                """
-                if height <= 0:
-                    return None  # No visible tree for zero values
-                # Scale tree width based on height
-                width_scale = 0.3 + (height / 100.0) * 0.5  # Gradually increase width
-                width = base_width * width_scale
-                
-                # Tree trunk (bottom 15%)
-                trunk_height = height * 0.15
-                trunk_width = width * 0.15
-                
-                if style == "cloud":
-                    # Cloud-shaped crown using multiple rounded bumps
-                    crown_height = height * 0.85
-                    n_bumps = 8  # Number of bumps to create cloud effect
-                    
-                    vertices = [
-                        # Trunk
-                        [x_center - trunk_width/2, 0],
-                        [x_center - trunk_width/2, trunk_height],
-                    ]
-                    
-                    # Create cloud-like bumpy crown
-                    for i in range(n_bumps):
-                        angle_fraction = i / n_bumps
-                        # Create bumps using sine wave for smooth cloud appearance
-                        angle = np.pi * angle_fraction
-                        
-                        # Height variation for cloud bumps
-                        bump_height = trunk_height + crown_height * (0.3 + 0.7 * np.sin(angle))
-                        
-                        # Width follows a rounded profile
-                        side_factor = -1 if angle_fraction <= 0.5 else 1
-                        bump_width = width/2 * np.sin(angle) * 1.2
-                        
-                        if angle_fraction <= 0.5:
-                            vertices.append([x_center - bump_width, bump_height])
-                        else:
-                            vertices.append([x_center + bump_width, bump_height])
-                    
-                    # Back to trunk
-                    vertices.append([x_center + trunk_width/2, trunk_height])
-                    vertices.append([x_center + trunk_width/2, 0])
-                    
-                else:  # Christmas tree style (default)
-                    # Christmas tree crown (top 85%) - layered tiers
-                    crown_height = height * 0.85
-                    n_tiers = 4  # Number of branch tiers
-                    
-                    # Define tree vertices (trunk + layered Christmas tree crown)
-                    vertices = [
-                        # Trunk
-                        [x_center - trunk_width/2, 0],
-                        [x_center - trunk_width/2, trunk_height],
-                    ]
-                    
-                    # Create layered tiers for Christmas tree effect
-                    for i in range(n_tiers):
-                        # Each tier gets progressively smaller toward the top
-                        tier_bottom = trunk_height + (i * crown_height / n_tiers)
-                        tier_top = trunk_height + ((i + 1) * crown_height / n_tiers)
-                        tier_mid = (tier_bottom + tier_top) / 2
-                        
-                        # Width decreases as we go up
-                        bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
-                        top_width_ratio = 1.0 - ((i + 1) * 0.7 / n_tiers)
-                        mid_width_ratio = (bottom_width_ratio + top_width_ratio) / 2
-                        
-                        # Left side of tier - going up
-                        vertices.append([x_center - width/2 * bottom_width_ratio, tier_bottom])
-                        vertices.append([x_center - width/2 * mid_width_ratio * 0.7, tier_mid])
-                    
-                    # Top point of tree
-                    vertices.append([x_center, height])
-                    
-                    # Right side - coming back down
-                    for i in range(n_tiers - 1, -1, -1):
-                        tier_bottom = trunk_height + (i * crown_height / n_tiers)
-                        tier_top = trunk_height + ((i + 1) * crown_height / n_tiers)
-                        tier_mid = (tier_bottom + tier_top) / 2
-                        
-                        bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
-                        top_width_ratio = 1.0 - ((i + 1) * 0.7 / n_tiers)
-                        mid_width_ratio = (bottom_width_ratio + top_width_ratio) / 2
-                        
-                        vertices.append([x_center + width/2 * mid_width_ratio * 0.7, tier_mid])
-                        vertices.append([x_center + width/2 * bottom_width_ratio, tier_bottom])
-                    
-                    # Back to trunk
-                    vertices.append([x_center + trunk_width/2, trunk_height])
-                    vertices.append([x_center + trunk_width/2, 0])
-                
-                return Polygon(vertices, closed=True)
-            
-            for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
-                ax = axs[loc_idx]
-                
-                # Set initial x-axis limits based on data
-                ax.set_xlim(-0.5, n_sizes - 0.5)
-                
-                # Add funky shaded green background with vertical gradient (top to bottom)
-                # Create a gradient array that goes from light (top) to dark (bottom)
-                gradient_array = np.linspace(0, 1, 256).reshape(256, 1)
-                gradient = ax.imshow(gradient_array, extent=[-0.5, n_sizes - 0.5, 0, 100], 
-                                     aspect='auto', cmap=funky_cmap, alpha=0.6, zorder=0,
-                                     origin='upper')  # origin='upper' makes gradient go top to bottom
-                
-                # Get first frame data for this location
+                # Extract size dimension information
                 with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                    var_data = ds[VAR_NAME].isel(time=0)
+                    VAR_NAME = VAR_NAMES[0]  # Assume single variable for point plots
+                    var_data = ds[VAR_NAME]
                     
-                    # Determine spatial dimension
-                    spatial_dim = None
-                    if 'ncol' in var_data.dims:
-                        spatial_dim = 'ncol'
-                    elif 'lndgrid' in var_data.dims:
-                        spatial_dim = 'lndgrid'
+                    print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
+                    print(f"Available dimensions in dataset: {list(ds.dims.keys())}")
                     
-                    if spatial_dim:
-                        # Unstructured grid - select by spatial index
-                        data = var_data.isel({spatial_dim: grid_idx}).values
+                    # Find the size dimension - look for common patterns
+                    size_dim = None
+                    for dim in var_data.dims:
+                        dim_lower = dim.lower()
+                        if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
+                            size_dim = dim
+                            break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not find size dimension in variable {VAR_NAME}")
+                        print(f"Variable dimensions: {var_data.dims}")
+                        print(f"Looking for dimensions containing: 'size', 'sz', 'fates_levscls', or 'levscls'")
+                        exit(1)
+                    
+                    n_sizes = len(ds[size_dim])
+                    print(f"Found size dimension '{size_dim}' with {n_sizes} bins")
+                    
+                    # Get size bin labels if available
+                    if f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
+                        size_bounds_var = f"{size_dim}_bounds" if f"{size_dim}_bounds" in ds.variables else f"fates_{size_dim}_bounds"
+                        size_bounds = ds[size_bounds_var].values
+                        size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
                     else:
-                        # Regular grid - this shouldn't happen for FATES data
-                        print(f"Warning: Could not determine spatial dimension for location {name}")
-                        data = np.zeros(n_sizes)
+                        size_labels = [f"Size {i+1}" for i in range(n_sizes)]
+                
+                # Setup figure with subplots for each location
+                n_locations = len(location_indices)
+                n_cols = min(n_locations, 2)
+                n_rows = (n_locations + n_cols - 1) // n_cols
+                
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(10*n_cols, 6*n_rows))
+                
+                # Set the entire figure background with a smooth gradient
+                # Create a custom colormap with more colors for smoother, constant vertical tone change
+                from matplotlib.colors import LinearSegmentedColormap
+                funky_colors = ['#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a', '#4caf50', '#43a047', '#388e3c', '#2e7d32', '#1b5e20']  # Smooth light to dark green
+                funky_cmap = LinearSegmentedColormap.from_list('funky_green', funky_colors)
+                fig.patch.set_facecolor('#c8e6c9')  # Base green color
+                
+                if n_locations == 1:
+                    axs = [axs]
+                else:
+                    axs = axs.flatten()
+                
+                # Add overall title for the PFT
+                fig.suptitle(f'{pft_upper} Points', fontsize=20, fontweight='bold', y=0.98)
+                
+                # Function to get country name from coordinates
+                def get_country(lat, lon):
+                    """Get country name from lat/lon coordinates using cartopy"""
+                    try:
+                        import cartopy.io.shapereader as shpreader
+                        shpfilename = shpreader.natural_earth(resolution='110m',
+                                                             category='cultural',
+                                                             name='admin_0_countries')
+                        reader = shpreader.Reader(shpfilename)
+                        countries = reader.records()
+                        point = Point(lon, lat)
+                        
+                        for country in countries:
+                            if prep(country.geometry).contains(point):
+                                return country.attributes['NAME']
+                        return "Unknown"
+                    except Exception as e:
+                        return "Unknown"
+                
+                # Create location info text for top right (using first location as example)
+                if location_indices:
+                    first_idx, first_lat, first_lon, first_name = location_indices[0]
+                    country_name = get_country(first_lat, first_lon)
+                    location_text = f"Lat: {first_lat:.2f}°, Lon: {first_lon:.2f}°\n{country_name}"
+                    fig.text(0.98, 0.96, location_text, fontsize=16, fontweight='bold',
+                            ha='right', va='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                # Initialize bar charts
+                bar_containers = []
+                tree_collections = []  # Store tree patch collections for each subplot
+                x_pos = np.arange(n_sizes)
+                
+                def create_tree_shape(x_center, height, base_width=0.3, style="christmas"):
+                    """Create a tree-shaped polygon that scales with height
                     
-                    data = data * SCALING_FACTORS[VAR_NAME]
-                
-                # Create tree-shaped patches for each bar
-                trees = []
-                for i, height in enumerate(data):
-                    tree = create_tree_shape(x_pos[i], height, base_width=0.9, style=TREE_STYLE)
-                    if tree is not None:
-                        trees.append(tree)
-                
-                # Create collection of tree patches (empty list is ok)
-                tree_collection = PatchCollection(trees if trees else [Polygon([[0,0]])], facecolors='forestgreen', 
-                                                 edgecolors='darkgreen', linewidths=1.5, zorder=2)
-                ax.add_collection(tree_collection)
-                tree_collections.append((tree_collection, trees))
-                bar_containers.append(trees)  # Store trees for update
-                
-                ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
-                ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
-                ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year 0, Month 01', 
-                           fontsize=14, fontweight='bold')
-                ax.set_xticks(x_pos)
-                ax.set_xticklabels(size_labels, rotation=45, ha='right')
-                ax.grid(axis='y', alpha=0.3, zorder=1)
-                
-                # Set y-axis limit based on max across all timesteps and locations
-                ax.set_ylim(0, None)  # Will update after scanning data
-            
-            # Hide unused subplots
-            for idx in range(n_locations, len(axs)):
-                axs[idx].axis('off')
-            
-            plt.tight_layout()
-            
-            # Determine y-axis limits by scanning all data
-            print("\nDetermining y-axis limits...")
-            max_value = 0
-            for file_path, time_idx, _ in file_time_map[:min(10, len(file_time_map))]:  # Sample first 10 frames
-                with xr.open_dataset(file_path, decode_times=False) as ds:
-                    var_data = ds[VAR_NAME].isel(time=time_idx)
-                    # Determine spatial dimension
-                    spatial_dim = None
-                    if 'ncol' in var_data.dims:
-                        spatial_dim = 'ncol'
-                    elif 'lndgrid' in var_data.dims:
-                        spatial_dim = 'lndgrid'
+                    Args:
+                        x_center: X position of the tree center
+                        height: Height of the tree
+                        base_width: Base width scaling factor
+                        style: 'christmas' for Christmas tree or 'cloud' for cloud-shaped crown
+                    """
+                    if height <= 0:
+                        return None  # No visible tree for zero values
+                    # Scale tree width based on height
+                    width_scale = 0.3 + (height / 100.0) * 0.5  # Gradually increase width
+                    width = base_width * width_scale
                     
-                    for grid_idx, _, _, _ in location_indices:
+                    # Tree trunk (bottom 15%)
+                    trunk_height = height * 0.15
+                    trunk_width = width * 0.15
+                    
+                    if style == "cloud":
+                        # Cloud-shaped crown using multiple rounded bumps
+                        crown_height = height * 0.85
+                        n_bumps = 8  # Number of bumps to create cloud effect
+                        
+                        vertices = [
+                            # Trunk
+                            [x_center - trunk_width/2, 0],
+                            [x_center - trunk_width/2, trunk_height],
+                        ]
+                        
+                        # Create cloud-like bumpy crown
+                        for i in range(n_bumps):
+                            angle_fraction = i / n_bumps
+                            # Create bumps using sine wave for smooth cloud appearance
+                            angle = np.pi * angle_fraction
+                            
+                            # Height variation for cloud bumps
+                            bump_height = trunk_height + crown_height * (0.3 + 0.7 * np.sin(angle))
+                            
+                            # Width follows a rounded profile
+                            side_factor = -1 if angle_fraction <= 0.5 else 1
+                            bump_width = width/2 * np.sin(angle) * 1.2
+                            
+                            if angle_fraction <= 0.5:
+                                vertices.append([x_center - bump_width, bump_height])
+                            else:
+                                vertices.append([x_center + bump_width, bump_height])
+                        
+                        # Back to trunk
+                        vertices.append([x_center + trunk_width/2, trunk_height])
+                        vertices.append([x_center + trunk_width/2, 0])
+                        
+                    else:  # Christmas tree style (default)
+                        # Christmas tree crown (top 85%) - layered tiers
+                        crown_height = height * 0.85
+                        n_tiers = 4  # Number of branch tiers
+                        
+                        # Define tree vertices (trunk + layered Christmas tree crown)
+                        vertices = [
+                            # Trunk
+                            [x_center - trunk_width/2, 0],
+                            [x_center - trunk_width/2, trunk_height],
+                        ]
+                        
+                        # Create layered tiers for Christmas tree effect
+                        for i in range(n_tiers):
+                            # Each tier gets progressively smaller toward the top
+                            tier_bottom = trunk_height + (i * crown_height / n_tiers)
+                            tier_top = trunk_height + ((i + 1) * crown_height / n_tiers)
+                            tier_mid = (tier_bottom + tier_top) / 2
+                            
+                            # Width decreases as we go up
+                            bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
+                            top_width_ratio = 1.0 - ((i + 1) * 0.7 / n_tiers)
+                            mid_width_ratio = (bottom_width_ratio + top_width_ratio) / 2
+                            
+                            # Left side of tier - going up
+                            vertices.append([x_center - width/2 * bottom_width_ratio, tier_bottom])
+                            vertices.append([x_center - width/2 * mid_width_ratio * 0.7, tier_mid])
+                        
+                        # Top point of tree
+                        vertices.append([x_center, height])
+                        
+                        # Right side - coming back down
+                        for i in range(n_tiers - 1, -1, -1):
+                            tier_bottom = trunk_height + (i * crown_height / n_tiers)
+                            tier_top = trunk_height + ((i + 1) * crown_height / n_tiers)
+                            tier_mid = (tier_bottom + tier_top) / 2
+                            
+                            bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
+                            top_width_ratio = 1.0 - ((i + 1) * 0.7 / n_tiers)
+                            mid_width_ratio = (bottom_width_ratio + top_width_ratio) / 2
+                            
+                            vertices.append([x_center + width/2 * mid_width_ratio * 0.7, tier_mid])
+                            vertices.append([x_center + width/2 * bottom_width_ratio, tier_bottom])
+                        
+                        # Back to trunk
+                        vertices.append([x_center + trunk_width/2, trunk_height])
+                        vertices.append([x_center + trunk_width/2, 0])
+                    
+                    return Polygon(vertices, closed=True)
+                
+                for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
+                    ax = axs[loc_idx]
+                    
+                    # Set initial x-axis limits based on data
+                    ax.set_xlim(-0.5, n_sizes - 0.5)
+                    
+                    # Add funky shaded green background with vertical gradient (top to bottom)
+                    # Create a gradient array that goes from light (top) to dark (bottom)
+                    gradient_array = np.linspace(0, 1, 512).reshape(512, 1)  # More steps for smoother gradient
+                    gradient = ax.imshow(gradient_array, extent=[-0.5, n_sizes - 0.5, 0, 100], 
+                                         aspect='auto', cmap=funky_cmap, alpha=0.6, zorder=0,
+                                         origin='upper', interpolation='bilinear')  # Smooth interpolation
+                    
+                    # Get first frame data for this location
+                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=0)
+                        
+                        # Determine spatial dimension
+                        spatial_dim = None
+                        if 'ncol' in var_data.dims:
+                            spatial_dim = 'ncol'
+                        elif 'lndgrid' in var_data.dims:
+                            spatial_dim = 'lndgrid'
+                        
+                        if spatial_dim:
+                            # Unstructured grid - select by spatial index
+                            data = var_data.isel({spatial_dim: grid_idx}).values
+                        else:
+                            # Regular grid - this shouldn't happen for FATES data
+                            print(f"Warning: Could not determine spatial dimension for location {name}")
+                            data = np.zeros(n_sizes)
+                        
+                        data = data * SCALING_FACTORS[VAR_NAME]
+                    
+                    # Create tree-shaped patches for each bar
+                    trees = []
+                    for i, height in enumerate(data):
+                        tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE)
+                        if tree is not None:
+                            trees.append(tree)
+                    
+                    # Create collection of tree patches (empty list is ok)
+                    tree_collection = PatchCollection(trees if trees else [Polygon([[0,0]])], facecolors='forestgreen', 
+                                                     edgecolors='darkgreen', linewidths=1.5, zorder=2)
+                    ax.add_collection(tree_collection)
+                    tree_collections.append((tree_collection, trees))
+                    bar_containers.append(trees)  # Store trees for update
+                    
+                    ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
+                    ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year 0, Month 01', 
+                               fontsize=14, fontweight='bold')
+                    ax.set_xticks(x_pos)
+                    ax.set_xticklabels(size_labels, rotation=45, ha='right')
+                    ax.grid(axis='y', alpha=0.3, zorder=1)
+                    
+                    # Set y-axis limit based on max across all timesteps and locations
+                    ax.set_ylim(0, None)  # Will update after scanning data
+                
+                # Hide unused subplots
+                for idx in range(n_locations, len(axs)):
+                    axs[idx].axis('off')
+                
+                plt.tight_layout()
+                
+                # Determine y-axis limits by scanning all data
+                print("\nDetermining y-axis limits...")
+                max_value = 0
+                for file_path, time_idx, _ in file_time_map[:min(10, len(file_time_map))]:  # Sample first 10 frames
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=time_idx)
+                        # Determine spatial dimension
+                        spatial_dim = None
+                        if 'ncol' in var_data.dims:
+                            spatial_dim = 'ncol'
+                        elif 'lndgrid' in var_data.dims:
+                            spatial_dim = 'lndgrid'
+                        
+                        for grid_idx, _, _, _ in location_indices:
+                            if spatial_dim:
+                                data = var_data.isel({spatial_dim: grid_idx}).values
+                            else:
+                                data = var_data.values
+                            data = data * SCALING_FACTORS[VAR_NAME]
+                            max_value = max(max_value, np.nanmax(data))
+                
+                for loc_idx, ax in enumerate(axs[:n_locations]):
+                    ax.set_ylim(0, max_value * 1.1)
+                    # Update background gradient extent to cover full plot area
+                    if len(ax.images) > 0:
+                        # Create new gradient array properly sized for the actual y-range
+                        gradient_array = np.linspace(0, 1, 512).reshape(512, 1)  # More steps for smoother gradient
+                        ax.images[0].set_data(gradient_array)
+                        ax.images[0].set_extent([-0.5, n_sizes - 0.5, 0, max_value * 1.1])
+                
+                # Animation update function for bar charts
+                current_file = None
+                current_ds = None
+                
+                def update_bars(frame):
+                    """Update bar charts for each location"""
+                    global current_file, current_ds
+                    
+                    print(f"\rProcessing frame {frame+1}/{n_times}", end='', flush=True)
+                    
+                    file_path, time_idx, time_val = file_time_map[frame]
+                    
+                    if current_file != file_path:
+                        if current_ds is not None:
+                            current_ds.close()
+                        current_ds = xr.open_dataset(file_path, decode_times=False)
+                        current_file = file_path
+                    
+                    # Update each location's bar chart
+                    for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
+                        ax = axs[loc_idx]
+                        tree_collection, old_trees = tree_collections[loc_idx]
+                        
+                        # Get data for this location and timestep
+                        var_data = current_ds[VAR_NAME].isel(time=time_idx)
+                        
+                        # Determine spatial dimension
+                        spatial_dim = None
+                        if 'ncol' in var_data.dims:
+                            spatial_dim = 'ncol'
+                        elif 'lndgrid' in var_data.dims:
+                            spatial_dim = 'lndgrid'
+                        
                         if spatial_dim:
                             data = var_data.isel({spatial_dim: grid_idx}).values
                         else:
                             data = var_data.values
+                        
                         data = data * SCALING_FACTORS[VAR_NAME]
-                        max_value = max(max_value, np.nanmax(data))
-            
-            for loc_idx, ax in enumerate(axs[:n_locations]):
-                ax.set_ylim(0, max_value * 1.1)
-                # Update background gradient extent to cover full plot area
-                if len(ax.images) > 0:
-                    # Create new gradient array properly sized for the actual y-range
-                    gradient_array = np.linspace(0, 1, 256).reshape(256, 1)
-                    ax.images[0].set_data(gradient_array)
-                    ax.images[0].set_extent([-0.5, n_sizes - 0.5, 0, max_value * 1.1])
-            
-            # Animation update function for bar charts
-            current_file = None
-            current_ds = None
-            
-            def update_bars(frame):
-                """Update bar charts for each location"""
-                global current_file, current_ds
-                
-                print(f"\rProcessing frame {frame+1}/{n_times}", end='', flush=True)
-                
-                file_path, time_idx, time_val = file_time_map[frame]
-                
-                if current_file != file_path:
-                    if current_ds is not None:
-                        current_ds.close()
-                    current_ds = xr.open_dataset(file_path, decode_times=False)
-                    current_file = file_path
-                
-                # Update each location's bar chart
-                for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
-                    ax = axs[loc_idx]
-                    tree_collection, old_trees = tree_collections[loc_idx]
-                    
-                    # Get data for this location and timestep
-                    var_data = current_ds[VAR_NAME].isel(time=time_idx)
-                    
-                    # Determine spatial dimension
-                    spatial_dim = None
-                    if 'ncol' in var_data.dims:
-                        spatial_dim = 'ncol'
-                    elif 'lndgrid' in var_data.dims:
-                        spatial_dim = 'lndgrid'
-                    
-                    if spatial_dim:
-                        data = var_data.isel({spatial_dim: grid_idx}).values
-                    else:
-                        data = var_data.values
-                    
-                    data = data * SCALING_FACTORS[VAR_NAME]
-                    
-                    # Create new tree shapes with updated heights
-                    new_trees = []
-                    for i, height in enumerate(data):
-                        tree = create_tree_shape(x_pos[i], height, base_width=0.9, style=TREE_STYLE)
-                        if tree is not None:
-                            new_trees.append(tree)
-                    
-                    # Update the patch collection with new trees (empty list clears all)
-                    if not new_trees:
-                        new_trees = [Polygon([[0,0], [0,0], [0,0]], closed=True)]  # Invisible placeholder
-                    tree_collection.set_paths(new_trees)
-                    
-                    # Update title with current time
-                    actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
-                    year = actual_timestep // 12
-                    month = actual_timestep % 12 + 1
-                    ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year {year}, Month {month:02d}',
+                        
+                        # Create new tree shapes with updated heights
+                        new_trees = []
+                        for i, height in enumerate(data):
+                            tree = create_tree_shape(x_pos[i], height, base_width=TREE_WIDTH, style=TREE_STYLE)
+                            if tree is not None:
+                                new_trees.append(tree)
+                        
+                        # Update the patch collection with new trees (empty list clears all)
+                        if not new_trees:
+                            new_trees = [Polygon([[0,0], [0,0], [0,0]], closed=True)]  # Invisible placeholder
+                        tree_collection.set_paths(new_trees)
+                        
+                        # Update title with current time
+                        actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
+                        year = actual_timestep // 12
+                        month = actual_timestep % 12 + 1
+                        ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year {year}, Month {month:02d}',
                                fontsize=14, fontweight='bold')
                 
-                return [tree_collections[i][0] for i in range(len(tree_collections))]
-            
-            # Create animation
-            print(f"\nCreating bar chart animation with {n_times} frames...")
-            anim = animation.FuncAnimation(
-                fig, update_bars, frames=n_times,
-                interval=tint,
-                blit=True,
-                repeat=True
-            )
+                    return [tree_collections[i][0] for i in range(len(tree_collections))]
+                
+                # Create animation
+                print(f"\nCreating bar chart animation with {n_times} frames...")
+                anim = animation.FuncAnimation(
+                    fig, update_bars, frames=n_times,
+                    interval=tint,
+                    blit=True,
+                    repeat=True
+                )
+                
+                # Create PFT-specific output file name
+                pft_output_file = OUTPUT_FILE.replace("_timeseries.", f"_{pft_name}_timeseries.")
+                print(f"\n\nSaving {pft_upper} animation to {pft_output_file}...")
+                
+                output_dir = Path(pft_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                if OUTPUT_FORMAT == "gif":
+                    from matplotlib.animation import PillowWriter
+                    writer = PillowWriter(fps=1000//tint)
+                    anim.save(pft_output_file, writer=writer, dpi=100)
+                else:
+                    from matplotlib.animation import FFMpegWriter
+                    writer = FFMpegWriter(fps=1000//tint, bitrate=5000)
+                    anim.save(pft_output_file, writer=writer, dpi=100)
+                
+                print(f"Animation successfully saved to: {pft_output_file}")
+                plt.close(fig)
         
         elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_bars_szpf":
             print("\n" + "="*60)
