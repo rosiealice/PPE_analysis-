@@ -21,6 +21,108 @@ from matplotlib.collections import PatchCollection
 from shapely.geometry import Point
 from shapely.prepared import prep
 
+# ============================================================================
+# HELPER FUNCTIONS (Extracted to avoid duplication)
+# ============================================================================
+
+def find_nearest_point(target_lat, target_lon, lats, lons):
+    """Find the nearest grid point to target lat/lon"""
+    valid_mask = ~(np.isnan(lats) | np.isnan(lons))
+    if not np.any(valid_mask):
+        print("ERROR: All lat/lon coordinates are NaN!")
+        return 0, np.nan, np.nan
+    
+    distances = np.full_like(lats, np.inf)
+    distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
+                                    (lons[valid_mask] - target_lon)**2)
+    idx = np.argmin(distances)
+    return idx, lats[idx], lons[idx]
+
+def get_country(lat, lon):
+    """Get country name from lat/lon coordinates using cartopy"""
+    try:
+        import cartopy.io.shapereader as shpreader
+        # Convert longitude to -180 to 180 range if needed
+        if lon > 180:
+            lon = lon - 360
+        
+        shpfilename = shpreader.natural_earth(resolution='110m',
+                                             category='cultural',
+                                             name='admin_0_countries')
+        reader = shpreader.Reader(shpfilename)
+        countries = reader.records()
+        point = Point(lon, lat)
+        
+        for country in countries:
+            if prep(country.geometry).contains(point):
+                return country.attributes['NAME']
+        return "Unknown"
+    except Exception as e:
+        return "Unknown"
+
+def get_us_state(lat, lon):
+    """Get US state name from lat/lon coordinates using cartopy"""
+    try:
+        import cartopy.io.shapereader as shpreader
+        # Convert longitude to -180 to 180 range if needed
+        if lon > 180:
+            lon = lon - 360
+        
+        # Load US states shapefile
+        shpfilename = shpreader.natural_earth(resolution='110m',
+                                             category='cultural',
+                                             name='admin_1_states_provinces')
+        reader = shpreader.Reader(shpfilename)
+        states = reader.records()
+        point = Point(lon, lat)
+        
+        for state in states:
+            # Only check US states
+            if state.attributes.get('admin') == 'United States of America':
+                if prep(state.geometry).contains(point):
+                    return state.attributes['name']
+        return None  # Not in USA
+    except Exception as e:
+        print(f"Error getting US state: {e}")
+        return None
+
+def read_location_file(pft_name, max_sites=8):
+    """Read location data from PFT-specific file
+    
+    Args:
+        pft_name: Name of PFT (e.g., 'bet', 'bdt', 'ent')
+        max_sites: Maximum number of sites to read
+        
+    Returns:
+        List of (lat, lon, name) tuples
+    """
+    pft_file = f'/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/{pft_name}_grid_cells.txt'
+    locations = []
+    
+    try:
+        with open(pft_file, 'r') as f:
+            site_count = 0
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('lat'):  # Skip empty lines and header
+                    continue
+                if site_count >= max_sites:
+                    break
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        lat = float(parts[0])
+                        lon = float(parts[1])
+                        site_count += 1
+                        locations.append((lat, lon, f"{pft_name.upper()}{site_count}"))
+                    except ValueError:
+                        continue
+        return locations
+    except FileNotFoundError:
+        print(f"WARNING: File not found: {pft_file}")
+        return []
+
+# ============================================================================
 # Configuration
 DATA_PATH = "/datalake/NS9560K/rosief/"
 CASENAME="i1850.ne16pg3_tn14.fatesnocomp.noresm3_0_beta08.CPLHIST.2025-12-18"
@@ -32,6 +134,7 @@ CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP_MS3.25_BT1EBT_bias30j_LU2000.2026-01-30"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT_bias28j_LU2000.2026-01-30"
 CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.2026-01-08"
+#CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.31j.2026-02-01"
 
 
 DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/lnd/hist/")
@@ -43,13 +146,13 @@ vminv = 1; vmaxv=99
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
 
 # Loop over multiple cases
-for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
+for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
     print(f"\n{'='*80}")
     print(f"PROCESSING CASE {case}")
     print(f"{'='*80}\n")
     
-    if(case==0):
-# Variable names - can be a single string or a list of string s
+    if case == 0:
+        # Variable names - can be a single string or a list of strings
         CASE_NAME = "hydraulic_mortality"
         VAR_NAMES = ["FATES_VEGC_LU"]  # or 
         SCALING_FACTORS = {var:1 for var in VAR_NAMES}
@@ -58,7 +161,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         tint=3
         UNIT_LABELS = {var: "m2/m2" for var in VAR_NAMES}
 
-    if(case==1):
+    elif case == 1:
         CASE_NAME = "Cfluxes"
         VAR_NAMES = ["FATES_GPP", 
         "FATES_NPP",
@@ -72,7 +175,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         tint=3
         UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
 
-    if(case==2):
+    elif case == 2:
         CASE_NAME = "mortality_sources"
         VAR_NAMES = ["FATES_MORTALITY_FIRE_CFLUX_PF", 
         "FATES_MORTALITY_HYDRAULIC_CFLUX_PF",
@@ -89,7 +192,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         OUTPUT_FORMAT = "mp4"  # "gif" or "mp4"
         UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
 
-    if(case==3):
+    elif case == 3:
         CASE_NAME = "fire_variables"
         VAR_NAMES = ["FATES_FIRE_CLOSS",
          "FATES_FIRE_INTENSITY",
@@ -106,7 +209,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         SAME_COLOR_SCALE = False  # Set to True to use same color scale for all variables
         vmaxv=97
 
-    if(case==4):
+    elif case == 4:
         CASE_NAME = "water_carbon"
         VAR_NAMES = ["FATES_GPP",
          "QVEGT",
@@ -121,7 +224,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         SAME_COLOR_SCALE = False  # Set to True to use same color scale for all variables
         vmaxv=98
 
-    if(case==5):
+    elif case == 5:
         VAR_NAMES = ["FATES_VEGC_ABOVEGROUND_SZ"]
         #VAR_NAMES = ["FATES_NPLANT_SZ"]
         #VAR_NAMES = ["FATES_VEGC_BASAL_AREA"]\
@@ -130,23 +233,25 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         fatesarea="FATES_AREA_PLANTS"
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
         UNIT_LABELS = {var: "cm2/ha" for var in VAR_NAMES}
-        YEAR_RANGE = (0, 2) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 1 # Process every Nth timestep 
-        tint=200  # time interval in ms
+        YEAR_RANGE = (0, 60) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 12 # Process every Nth timestep 
+        tint=150  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
         TREE_STYLE = "cloud"  # "christmas" for Christmas tree shape, "cloud" for cloud-shaped crowns
         TREE_WIDTH = 1.5  # Control variable for tree width (default is 0.3, higher = wider trees)
+        SHOW_TEMPERATURE = True  # Show temperature indicator bar and text
+        SHOW_BTRAN = False  # Show BTRAN indicator box at bottom
         
         # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
-        PFT_LIST = ['bet','bdt','ent']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        PFT_LIST = ['ent','bet','bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
         
         # Convert to list if single string
         if isinstance(PFT_LIST, str):
             PFT_LIST = [PFT_LIST]
 
 
-    if(case==6):
+    elif case == 6:
         CASE_NAME = "vegc_szpf_points"
         VAR_NAMES = ["FATES_VEGC_SZPF"]
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
@@ -178,6 +283,31 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         LOCATIONS.append((lat, lon, f"ENT{site_count}"))
                     except ValueError:
                         continue  # Skip lines that don't parse as numbers
+
+    elif case == 7:
+        VAR_NAMES = ["FATES_MORTALITY_BACKGROUND_SZ","FATES_MORTALITY_FIRE_SZ", "FATES_MORTALITY_CSTARV_SZ","FATES_MORTALITY_FREEZING_SZ","FATES_MORTALITY_SENESCENCE_SZ"]
+
+        VAR_NAMES = ["FATES_NPP_PF","FATES_MORTALITY_FIRE_CFLUX_PF","FATES_MORTALITY_HYDRAULIC_CFLUX_PF","FATES_MORTALITY_CSTARV_CFLUX_PF","FATES_MORTALITY_BACKGROUND_CFLUX_PF","FATES_MORTALITY_SENESCENCE_CFLUX_PF"]
+        CASE_NAME = 'M ortality_sources_pf'
+        BACKG_VAR = "BTRAN"
+        fatesarea = "FATES_AREA_PLANTS"
+        SCALING_FACTORS = {var: 1 for var in VAR_NAMES}  # Convert from per-second to per-year
+        SCALING_FACTORS[0]=0.01
+        UNIT_LABELS = {var: "m2/yr" for var in VAR_NAMES}
+        YEAR_RANGE = (58, 60)  # Year range to process
+        FILE_INTERVAL = 1  # Process every Nth timestep
+        tint = 150  # time interval in ms
+        OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
+        PLOT_TYPE = "point_scatter_sz"  # Scatter plot for size class data
+        SHOW_TEMPERATURE = True  # Show temperature indicator bar and text
+        SHOW_BTRAN = False  # Show BTRAN indicator box at bottom
+        
+        # Control variable for PFTs to plot
+        PFT_LIST = ['ent', 'bet', 'bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        
+        # Convert to list if single string
+        if isinstance(PFT_LIST, str):
+            PFT_LIST = [PFT_LIST]
 
 
     # Convert to list if single string provided
@@ -427,7 +557,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
             def plot_pft_animation(pft_name, pft_list, var_names, var_metadata, file_time_map, 
                                   scaling_factors, unit_labels, tree_style, tree_width, backg_var, 
                                   fatesarea, output_file, output_format, tint, start_timestep, 
-                                  file_interval):
+                                  file_interval, show_temperature=True, show_btran=False):
                 """
                 Create animation for a single PFT.
                 
@@ -454,57 +584,18 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 print(f"Processing PFT: {pft_upper}")
                 print(f"{'='*60}\n")
                 
-                # Read locations from PFT-specific file
-                pft_file = f'/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/{pft_name}_grid_cells.txt'
-                print(f"Reading locations from: {pft_file}")
+                # Read locations from PFT-specific file using helper function
+                print(f"Reading locations from PFT file for {pft_upper}...")
+                LOCATIONS = read_location_file(pft_name, max_sites=8)
                 
-                LOCATIONS = []
-                try:
-                    with open(pft_file, 'r') as f:
-                        site_count = 0
-                        for line in f:
-                            line = line.strip()
-                            if not line or line.startswith('lat'):  # Skip empty lines and header
-                                continue
-                            if site_count >= 8:  # Only read first 8 sites
-                                break
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                try:
-                                    lat = float(parts[0])
-                                    lon = float(parts[1])
-                                    site_count += 1
-                                    LOCATIONS.append((lat, lon, f"{pft_upper}{site_count}"))
-                                except ValueError:
-                                    continue  # Skip lines that don't parse as numbers
-                    print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
-                except FileNotFoundError:
-                    print(f"WARNING: File not found: {pft_file}")
+                if not LOCATIONS:
                     print(f"Skipping PFT: {pft_upper}")
                     return
                 
-                if not LOCATIONS:
-                    print(f"WARNING: No valid locations found for {pft_upper}")
-                    return
+                print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
             
                 # Find nearest grid points to requested locations
-                def find_nearest_point(target_lat, target_lon, lats, lons):
-                    """Find the nearest grid point to target lat/lon"""
-                    # Handle NaN values
-                    valid_mask = ~(np.isnan(lats) | np.isnan(lons))
-                    if not np.any(valid_mask):
-                        print("ERROR: All lat/lon coordinates are NaN!")
-                        return 0, np.nan, np.nan
-                    
-                    # Only compute distances for valid points
-                    distances = np.full_like(lats, np.inf)
-                    distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
-                                                    (lons[valid_mask] - target_lon)**2)
-                    idx = np.argmin(distances)
-                    return idx, lats[idx], lons[idx]
-            
                 location_indices = []
-                # Ensure lat/lon are arrays (they should be from var_metadata)
                 lats_array = var_metadata['lat']
                 lons_array = var_metadata['lon']
                 for target_lat, target_lon, name in LOCATIONS:
@@ -530,7 +621,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             unit_labels[VAR_NAME] = "units"
                             print("No units attribute found in netcdf file")
                     
-                    # Find the size dimension - look for common patterns
+                    # Find the size or PFT dimension - look for common patterns
                     size_dim = None
                     for dim in var_data.dims:
                         dim_lower = dim.lower()
@@ -538,17 +629,39 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             size_dim = dim
                             break
                     
+                    # If no size dimension found, check for PFT dimension
                     if size_dim is None:
-                        print(f"ERROR: Could not find size dimension in variable {VAR_NAME}")
+                        for dim in var_data.dims:
+                            dim_lower = dim.lower()
+                            if any(pattern in dim_lower for pattern in ['pft', 'fates_levpft', 'levpft']):
+                                size_dim = dim
+                                print(f"Note: Using PFT dimension '{size_dim}' instead of size dimension")
+                                break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not find size or PFT dimension in variable {VAR_NAME}")
                         print(f"Variable dimensions: {var_data.dims}")
-                        print(f"Looking for dimensions containing: 'size', 'sz', 'fates_levscls', or 'levscls'")
+                        print(f"Looking for dimensions containing: 'size', 'sz', 'fates_levscls', 'levscls', 'pft', or 'levpft'")
                         return
                     
                     n_sizes = len(ds[size_dim])
-                    print(f"Found size dimension '{size_dim}' with {n_sizes} bins")
+                    print(f"Found dimension '{size_dim}' with {n_sizes} bins")
                     
-                    # Get size bin labels if available
-                    if f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
+                    # Check if this is a PFT dimension
+                    is_pft_dim = 'pft' in size_dim.lower()
+                    
+                    # Get labels based on dimension type
+                    if is_pft_dim:
+                        # For PFT dimensions, create simple PFT labels
+                        pft_names = ['BET Tropical', 'BET Temperate', 'BDT Tropical', 'BDT Temperate', 
+                                   'NET Temperate', 'NDT Boreal', 'NET Boreal', 'BES Temperate', 
+                                   'BDS Temperate', 'BDS Boreal', 'C3 Arctic Grass', 'C3 Grass', 'C4 Grass']
+                        # Use actual PFT names if available, otherwise use generic labels
+                        if n_sizes <= len(pft_names):
+                            size_labels = [f"PFT{i+1}" for i in range(n_sizes)]  # Simple labels
+                        else:
+                            size_labels = [f"PFT{i+1}" for i in range(n_sizes)]
+                    elif f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
                         size_bounds_var = f"{size_dim}_bounds" if f"{size_dim}_bounds" in ds.variables else f"fates_{size_dim}_bounds"
                         size_bounds = ds[size_bounds_var].values
                         size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
@@ -577,57 +690,9 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 else:
                     axs = axs.flatten()
                 
-                # Add overall title for the PFT
-                fig.suptitle(f'{pft_upper} Points', fontsize=20, fontweight='bold', y=0.98)
-                
-                # Function to get country name from coordinates
-                def get_country(lat, lon):
-                    """Get country name from lat/lon coordinates using cartopy"""
-                    try:
-                        import cartopy.io.shapereader as shpreader
-                        # Convert longitude to -180 to 180 range if needed
-                        if lon > 180:
-                            lon = lon - 360
-                        
-                        shpfilename = shpreader.natural_earth(resolution='110m',
-                                                             category='cultural',
-                                                             name='admin_0_countries')
-                        reader = shpreader.Reader(shpfilename)
-                        countries = reader.records()
-                        point = Point(lon, lat)
-                        
-                        for country in countries:
-                            if prep(country.geometry).contains(point):
-                                return country.attributes['NAME']
-                        return "Unknown"
-                    except Exception as e:
-                        return "Unknown"
-                
-                def get_us_state(lat, lon):
-                    """Get US state name from lat/lon coordinates using cartopy"""
-                    try:
-                        import cartopy.io.shapereader as shpreader
-                        # Convert longitude to -180 to 180 range if needed
-                        if lon > 180:
-                            lon = lon - 360
-                        
-                        # Load US states shapefile
-                        shpfilename = shpreader.natural_earth(resolution='110m',
-                                                             category='cultural',
-                                                             name='admin_1_states_provinces')
-                        reader = shpreader.Reader(shpfilename)
-                        states = reader.records()
-                        point = Point(lon, lat)
-                        
-                        for state in states:
-                            # Only check US states
-                            if state.attributes.get('admin') == 'United States of America':
-                                if prep(state.geometry).contains(point):
-                                    return state.attributes['name']
-                        return None  # Not in USA
-                    except Exception as e:
-                        print(f"Error getting US state: {e}")
-                        return None
+                # Add overall title for the PFT with variable name
+                display_name = var_names[0].replace('FATES_', '')
+                fig.suptitle(f'{pft_upper} Points - {display_name}', fontsize=20, fontweight='bold', y=0.98)
                 
                 # Initialize bar charts
                 bar_containers = []
@@ -639,7 +704,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     
                     Args:
                         x_center: X position of the tree center
-                        height: Height of the tree
+                        height: Height value where the TOP of the tree should be plotted
                         base_width: Base width scaling factor
                         style: 'christmas' for Christmas tree or 'cloud' for cloud-shaped crown
                         pft_type: PFT name for PFT-specific customization (e.g., 'bet', 'bdt')
@@ -655,22 +720,29 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     width_scale = 0.3 + (height / 100.0) * 0.5  # Gradually increase width
                     width = base_width * width_scale
                     
-                    # Tree trunk (bottom 15%)
-                    trunk_height = height * 0.15
-                    trunk_width = width * 0.15
+                    # Tree trunk (bottom 15%) and crown proportions
+                    trunk_proportion = 0.15
                     
                     if style == "cloud":
                         # PFT-specific parameters for cloud-shaped canopy
                         if pft_type == "bet":
                             # Bet PFT: wider and less deep canopy with flat top
-                            crown_height = height * 0.65  # Shallower canopy (was 0.85)
+                            crown_proportion = 0.65  # Shallower canopy (was 0.85)
                             canopy_width_multiplier = 1.1  # Even wider canopy (was 0.85)
-                            trunk_height = height * 0.35  # Taller trunk to compensate
+                            trunk_proportion = 0.35  # Taller trunk to compensate
                         else:
                             # Default tropical tree parameters
-                            crown_height = height * 0.85
+                            crown_proportion = 0.85
                             canopy_width_multiplier = 0.6
                         
+                        # Calculate absolute heights - tree top is at 'height', base is below
+                        tree_total_height = height
+                        trunk_height = tree_total_height * trunk_proportion
+                        crown_height = tree_total_height * crown_proportion
+                        trunk_width = width * 0.15
+                        
+                        # Base of tree starts at 0, top ends at specified height
+                        tree_base = 0
                         crown_base = trunk_height
                         crown_top = height
                         
@@ -678,9 +750,9 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         n_points = 40  # More points for smoother curve
                         
                         vertices = [
-                            # Trunk
-                            [x_center - trunk_width/2, 0],
-                            [x_center - trunk_width/2, trunk_height],
+                            # Trunk (starts at base, goes up to crown)
+                            [x_center - trunk_width/2, tree_base],
+                            [x_center - trunk_width/2, crown_base],
                         ]
                         
                         # Create smooth rounded crown using semi-ellipse with bumps
@@ -710,18 +782,29 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             vertices.append([x_center + x_offset, y_pos])
                         
                         # Complete the shape back to trunk
-                        vertices.append([x_center + trunk_width/2, trunk_height])
-                        vertices.append([x_center + trunk_width/2, 0])
+                        vertices.append([x_center + trunk_width/2, crown_base])
+                        vertices.append([x_center + trunk_width/2, tree_base])
                         
                     else:  # Christmas tree style (default)
-                        # Christmas tree crown (top 85%) - layered tiers
-                        crown_height = height * 0.85
+                        # Christmas tree crown proportions
+                        crown_proportion = 0.85
+                        trunk_proportion = 0.15
+                        
+                        # Calculate absolute heights - tree top is at 'height', base is below
+                        tree_total_height = height
+                        trunk_height = tree_total_height * trunk_proportion
+                        crown_height = tree_total_height * crown_proportion
+                        trunk_width = width * 0.15
+                        
+                        # Base of tree starts at 0, top ends at specified height
+                        tree_base = 0
+                        
                         n_tiers = 4  # Number of branch tiers
                         
                         # Define tree vertices (trunk + layered Christmas tree crown)
                         vertices = [
-                            # Trunk
-                            [x_center - trunk_width/2, 0],
+                            # Trunk (starts at base, goes up)
+                            [x_center - trunk_width/2, tree_base],
                             [x_center - trunk_width/2, trunk_height],
                         ]
                         
@@ -759,7 +842,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         
                         # Back to trunk
                         vertices.append([x_center + trunk_width/2, trunk_height])
-                        vertices.append([x_center + trunk_width/2, 0])
+                        vertices.append([x_center + trunk_width/2, tree_base])
                     
                     return Polygon(vertices, closed=True)
                 
@@ -844,7 +927,14 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 print("\nDetermining y-axis limits...")
                 max_value = 0
                 n_times = len(file_time_map)
-                for file_path, time_idx, _ in file_time_map[:min(10, n_times)]:  # Sample first 10 frames
+                # Sample first and last files to determine data range
+                sample_files = []
+                if n_times > 0:
+                    sample_files.append(file_time_map[0])  # First file
+                if n_times > 1:
+                    sample_files.append(file_time_map[-1])  # Last file
+                
+                for file_path, time_idx, _ in sample_files:
                     with xr.open_dataset(file_path, decode_times=False) as ds:
                         var_data = ds[VAR_NAME].isel(time=time_idx)
                         # Determine spatial dimension
@@ -863,128 +953,135 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             max_value = max(max_value, np.nanmax(data))
                 
                 # Add BTRAN boxes at the bottom of each subplot (in negative Y space)
-                btran_box_height = max_value * 0.1  # Height of BTRAN indicator box
+                btran_box_height = max_value * 0.1 if show_btran else 0  # Height of BTRAN indicator box
                 btran_boxes = []  # Store references to BTRAN boxes for animation updates
                 temp_bars = []  # Store references to temperature bars for animation updates
                 temp_bar_texts = []  # Store references to temperature text labels
-                
+                yax_scaler=1.2
                 for loc_idx, ax in enumerate(axs[:n_locations]):
-                    ax.set_ylim(-btran_box_height, max_value * 0.6)
+                    ax.set_ylim(-btran_box_height, max_value * yax_scaler)
                     # Update background gradient extent to cover full plot area
                     if len(ax.images) > 0:
                         # Create new gradient array properly sized for the actual y-range
                         gradient_array = np.linspace(0, 1, 512).reshape(512, 1)  # More steps for smoother gradient
                         ax.images[0].set_data(gradient_array)
-                        ax.images[0].set_extent([-0.5, n_sizes - 0.5, 0, max_value * 1.1])
+                        ax.images[0].set_extent([-0.5, n_sizes - 0.5, -btran_box_height, max_value * yax_scaler])
                     
                     # Add BTRAN indicator box at the bottom
-                    # Get initial BTRAN value for this location
-                    grid_idx, _, _, _ = location_indices[loc_idx]
-                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                        if backg_var in ds.variables:
-                            btran_data = ds[backg_var].isel(time=0)
-                            # Determine spatial dimension
-                            if 'ncol' in btran_data.dims:
-                                btran_val = btran_data.isel(ncol=grid_idx).values
-                            elif 'lndgrid' in btran_data.dims:
-                                btran_val = btran_data.isel(lndgrid=grid_idx).values
-                            else:
-                                btran_val = 0.5  # Default if spatial dim not found
-                            
-                            # Divide by FATES_AREA_PLANTS
-                            if fatesarea in ds.variables:
-                                fatesarea_data = ds[fatesarea].isel(time=0)
-                                if 'ncol' in fatesarea_data.dims:
-                                    fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
-                                elif 'lndgrid' in fatesarea_data.dims:
-                                    fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                    if show_btran:
+                        # Get initial BTRAN value for this location
+                        grid_idx, _, _, _ = location_indices[loc_idx]
+                        with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                            if backg_var in ds.variables:
+                                btran_data = ds[backg_var].isel(time=0)
+                                # Determine spatial dimension
+                                if 'ncol' in btran_data.dims:
+                                    btran_val = btran_data.isel(ncol=grid_idx).values
+                                elif 'lndgrid' in btran_data.dims:
+                                    btran_val = btran_data.isel(lndgrid=grid_idx).values
                                 else:
-                                    fatesarea_val = 1.0
-                                if fatesarea_val > 0:
-                                    btran_val = btran_val / fatesarea_val
-                        else:
-                            print(f"Warning: {backg_var} not found in dataset")
-                            btran_val = 0.5  # Default value
-                    
-                    # Create blue box with intensity proportional to BTRAN (dark blue at 1, white at 0)
-                    # Use a blue color that scales from white (0) to dark blue (1)
-                    blue_intensity = btran_val  # 0 to 1
-                    box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)  # Map to blues colormap (0.1-1.0 range)
-                    
-                    btran_box = ax.fill_between(
-                        [-0.5, n_sizes - 0.5], 
-                        [-btran_box_height, -btran_box_height], 
-                        [0, 0],
-                        color=box_color, 
-                        alpha=0.8, 
-                        zorder=5,
-                        linewidth=2,
-                        edgecolor='navy'
-                    )
-                    btran_boxes.append(btran_box)
-                    
-                    # Add BTRAN label
-                    ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{backg_var}: {btran_val:.2f}', 
-                           ha='center', va='center', fontsize=10, fontweight='bold',
-                           color='darkblue', zorder=6)
+                                    btran_val = 0.5  # Default if spatial dim not found
+                                
+                                # Divide by FATES_AREA_PLANTS
+                                if fatesarea in ds.variables:
+                                    fatesarea_data = ds[fatesarea].isel(time=0)
+                                    if 'ncol' in fatesarea_data.dims:
+                                        fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
+                                    elif 'lndgrid' in fatesarea_data.dims:
+                                        fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                                    else:
+                                        fatesarea_val = 1.0
+                                    if fatesarea_val > 0:
+                                        btran_val = btran_val / fatesarea_val
+                            else:
+                                print(f"Warning: {backg_var} not found in dataset")
+                                btran_val = 0.5  # Default value
+                        
+                        # Create blue box with intensity proportional to BTRAN (dark blue at 1, white at 0)
+                        # Use a blue color that scales from white (0) to dark blue (1)
+                        blue_intensity = btran_val  # 0 to 1
+                        box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)  # Map to blues colormap (0.1-1.0 range)
+                        
+                        btran_box = ax.fill_between(
+                            [-0.5, n_sizes - 0.5], 
+                            [-btran_box_height, -btran_box_height], 
+                            [0, 0],
+                            color=box_color, 
+                            alpha=0.8, 
+                            zorder=5,
+                            linewidth=2,
+                            edgecolor='navy'
+                        )
+                        btran_boxes.append(btran_box)
+                        
+                        # Add BTRAN label
+                        ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{backg_var}: {btran_val:.2f}', 
+                               ha='center', va='center', fontsize=10, fontweight='bold',
+                               color='darkblue', zorder=6)
+                    else:
+                        btran_boxes.append(None)
                     
                     # Add temperature indicator as a red bar on the right side
-                    # Get initial TSA value for this location
-                    temp_var = 'TSA'
-                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                        if temp_var in ds.variables:
-                            temp_data = ds[temp_var].isel(time=0)
-                            # Determine spatial dimension
-                            if 'ncol' in temp_data.dims:
-                                temp_val = temp_data.isel(ncol=grid_idx).values
-                            elif 'lndgrid' in temp_data.dims:
-                                temp_val = temp_data.isel(lndgrid=grid_idx).values
+                    if show_temperature:
+                        # Get initial TSA value for this location
+                        temp_var = 'TSA'
+                        with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                            if temp_var in ds.variables:
+                                temp_data = ds[temp_var].isel(time=0)
+                                # Determine spatial dimension
+                                if 'ncol' in temp_data.dims:
+                                    temp_val = temp_data.isel(ncol=grid_idx).values
+                                elif 'lndgrid' in temp_data.dims:
+                                    temp_val = temp_data.isel(lndgrid=grid_idx).values
+                                else:
+                                    temp_val = 273.1  # Default 0°C in Kelvin
+                                
+                                # Convert from Kelvin to Celsius if needed
+                                temp_celsius = float(temp_val)
+                                if temp_celsius > 100:  # Likely in Kelvin
+                                    temp_celsius = temp_celsius - 273.15
                             else:
-                                temp_val = 273.1  # Default 0°C in Kelvin
-                            
-                            # Convert from Kelvin to Celsius if needed
-                            temp_celsius = float(temp_val)
-                            if temp_celsius > 100:  # Likely in Kelvin
-                                temp_celsius = temp_celsius - 273.15
-                        else:
-                            print(f"Warning: {temp_var} not found in dataset")
-                            temp_celsius = 0.0  # Default value
-                    
-                    # Create red temperature bar on the right side
-                    # Map temperature to bar height: -20°C (min) -> 25°C (max) = 0 to max_value * 1.1
-                    temp_min, temp_max = -20, 25
-                    temp_range = temp_max - temp_min
-                    temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * 1.1
-                    temp_height = np.clip(temp_height, 0, max_value * 1.1)  # Clamp to plot range
-                    
-                    # Position bar on the right side of the plot
-                    temp_bar_x = n_sizes - 0.2  # Right side position
-                    temp_bar_width = 0.35  # Width of the bar
-                    
-                    # Create the red bar
-                    temp_bar = ax.fill_between(
-                        [temp_bar_x, temp_bar_x + temp_bar_width],
-                        [0, 0],
-                        [temp_height, temp_height],
-                        color='red',
-                        alpha=0.7,
-                        zorder=15,
-                        linewidth=2,
-                        edgecolor='darkred'
-                    )
-                    temp_bars.append(temp_bar)
-                    
-                    # Add temperature label that follows bar but stays within bounds
-                    # Position text at bar height, clamped to stay visible
-                    text_y_pos = np.clip(temp_height, 0, max_value * 1.0)
-                    # Position text further to the left, over the larger size classes
-                    text_x_pos = n_sizes - 2.0  # Further left, over the 100cm area
-                    temp_text = ax.text(text_x_pos, text_y_pos,
-                           f'{temp_celsius:.1f}°C',
-                           ha='center', va='center', fontsize=9, fontweight='bold',
-                           color='darkred', zorder=16,
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='darkred'))
-                    temp_bar_texts.append(temp_text)
+                                print(f"Warning: {temp_var} not found in dataset")
+                                temp_celsius = 0.0  # Default value
+                        
+                        # Create red temperature bar on the right side
+                        # Map temperature to bar height: -20°C (min) -> 25°C (max) = 0 to max_value * 1.1
+                        temp_min, temp_max = -20, 25
+                        temp_range = temp_max - temp_min
+                        temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * 1.1
+                        temp_height = np.clip(temp_height, 0, max_value * 1.1)  # Clamp to plot range
+                        
+                        # Position bar on the right side of the plot
+                        temp_bar_x = n_sizes - 0.2  # Right side position
+                        temp_bar_width = 0.35  # Width of the bar
+                        
+                        # Create the red bar
+                        temp_bar = ax.fill_between(
+                            [temp_bar_x, temp_bar_x + temp_bar_width],
+                            [0, 0],
+                            [temp_height, temp_height],
+                            color='red',
+                            alpha=0.7,
+                            zorder=15,
+                            linewidth=2,
+                            edgecolor='darkred'
+                        )
+                        temp_bars.append(temp_bar)
+                        
+                        # Add temperature label that follows bar but stays within bounds
+                        # Position text at bar height, clamped to stay within 0.2 to 0.5 of subplot height
+                        text_y_pos = np.clip(temp_height, max_value * 0.1, max_value * 0.4)
+                        # Position text further to the left, over the larger size classes
+                        text_x_pos = n_sizes - 2.0  # Further left, over the 100cm area
+                        temp_text = ax.text(text_x_pos, text_y_pos,
+                               f'{temp_celsius:.1f}°C',
+                               ha='center', va='center', fontsize=9, fontweight='bold',
+                               color='darkred', zorder=16,
+                               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='darkred'))
+                        temp_bar_texts.append(temp_text)
+                    else:
+                        temp_bars.append(None)
+                        temp_bar_texts.append(None)
                 
                 # Animation update function for bar charts
                 current_file = None
@@ -1010,7 +1107,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         tree_collection, old_trees = tree_collections[loc_idx]
                         
                         # Update BTRAN box color
-                        if backg_var in current_ds.variables:
+                        if show_btran and backg_var in current_ds.variables:
                             btran_data = current_ds[backg_var].isel(time=time_idx)
                             if 'ncol' in btran_data.dims:
                                 btran_val = btran_data.isel(ncol=grid_idx).values
@@ -1033,22 +1130,24 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         else:
                             btran_val = 0.5
                         
-                        # Update BTRAN box color (dark blue at 1, white at 0)
-                        blue_intensity = float(btran_val)
-                        box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)
-                        btran_boxes[loc_idx].set_color(box_color)
-                        
-                        # Update BTRAN text - find and update existing text
-                        # Remove old BTRAN text and add new one
-                        for text_obj in ax.texts:
-                            if backg_var in text_obj.get_text():
-                                text_obj.remove()
-                        ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{backg_var}: {btran_val:.2f}', 
-                               ha='center', va='center', fontsize=10, fontweight='bold',
-                               color='darkblue', zorder=6)
+                        if show_btran:
+                            # Update BTRAN box color (dark blue at 1, white at 0)
+                            blue_intensity = float(btran_val)
+                            box_color = plt.cm.Blues(blue_intensity * 0.9 + 0.1)
+                            btran_boxes[loc_idx].set_color(box_color)
+                            
+                            # Update BTRAN text - find and update existing text
+                            # Remove old BTRAN text and add new one
+                            for text_obj in ax.texts:
+                                if backg_var in text_obj.get_text():
+                                    text_obj.remove()
+                            ax.text(n_sizes/2 - 0.5, -btran_box_height/2, f'{backg_var}: {btran_val:.2f}', 
+                                   ha='center', va='center', fontsize=10, fontweight='bold',
+                                   color='darkblue', zorder=6)
                         
                         # Update temperature bar height
-                        temp_var = 'TSA'
+                        if show_temperature:
+                            temp_var = 'TSA'
                         if temp_var in current_ds.variables:
                             temp_data = current_ds[temp_var].isel(time=time_idx)
                             if 'ncol' in temp_data.dims:
@@ -1065,35 +1164,35 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         else:
                             temp_celsius = 0.0
                         
-                        # Update temperature bar height based on temperature
-                        temp_min, temp_max = -20, 25
-                        temp_range = temp_max - temp_min
-                        
-                        temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * 1.1
-                        
-                        temp_height = np.clip(temp_height, 0, max_value * 1.1)
-                        print('temp_height=', temp_height)
-                        # Update bar by removing and recreating (easier than modifying fill_between)
-                        temp_bars[loc_idx].remove()
-                        temp_bar_x = n_sizes - 0.2
-                        temp_bar_width = 0.35
-                        temp_bar = ax.fill_between(
-                            [temp_bar_x, temp_bar_x + temp_bar_width],
-                            [0, 0],
-                            [temp_height, temp_height],
-                            color='red',
-                            alpha=0.7,
-                            zorder=15,
-                            linewidth=2,
-                            edgecolor='darkred'
-                        )
-                        temp_bars[loc_idx] = temp_bar
-                        
-                        # Update temperature text to follow bar height but stay within bounds
-                        text_y_pos = np.clip(temp_height, 0, max_value * 1.0)
-                        text_x_pos = n_sizes - 2.0
-                        temp_bar_texts[loc_idx].set_position((text_x_pos, text_y_pos))
-                        temp_bar_texts[loc_idx].set_text(f'{temp_celsius:.1f}°C')
+                        if show_temperature:
+                            # Update temperature bar height based on temperature
+                            temp_min, temp_max = -20, 25
+                            temp_range = temp_max - temp_min
+                            heightbox_scaler=0.4
+                            temp_height = ((temp_celsius - temp_min) / temp_range) * max_value * yax_scaler * heightbox_scaler
+                            
+                            temp_height = np.clip(temp_height, 0, max_value * 1.1)
+                            # Update bar by removing and recreating (easier than modifying fill_between)
+                            temp_bars[loc_idx].remove()
+                            temp_bar_x = n_sizes - 0.2
+                            temp_bar_width = 0.35
+                            temp_bar = ax.fill_between(
+                                [temp_bar_x, temp_bar_x + temp_bar_width],
+                                [0, 0],
+                                [temp_height, temp_height],
+                                color='red',
+                                alpha=0.7,
+                                zorder=15,
+                                linewidth=2,
+                                edgecolor='darkred'
+                            )
+                            temp_bars[loc_idx] = temp_bar
+                            
+                            # Update temperature text to follow bar height but stay within bounds
+                            text_y_pos = np.clip(temp_height, max_value * 0.2, max_value * 0.5)
+                            text_x_pos = n_sizes - 2.0
+                            temp_bar_texts[loc_idx].set_position((text_x_pos, text_y_pos))
+                            temp_bar_texts[loc_idx].set_text(f'{temp_celsius:.1f}°C')
                         
                         # Get data for this location and timestep
                         var_data = current_ds[VAR_NAME].isel(time=time_idx)
@@ -1180,7 +1279,9 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     output_format=OUTPUT_FORMAT,
                     tint=tint,
                     start_timestep=start_timestep,
-                    file_interval=FILE_INTERVAL
+                    file_interval=FILE_INTERVAL,
+                    show_temperature=SHOW_TEMPERATURE,
+                    show_btran=SHOW_BTRAN
                 )
         
         elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_bars_szpf":
@@ -1188,19 +1289,7 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
             print("CREATING POINT-BASED STACKED BAR CHART (SIZE x PFT)")
             print("="*60)
             
-            # Find nearest grid points to requested locations
-            def find_nearest_point(target_lat, target_lon, lats, lons):
-                """Find the nearest grid point to target lat/lon"""
-                valid_mask = ~(np.isnan(lats) | np.isnan(lons))
-                if not np.any(valid_mask):
-                    print("ERROR: All lat/lon coordinates are NaN!")
-                    return 0, np.nan, np.nan
-                distances = np.full_like(lats, np.inf)
-                distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
-                                                (lons[valid_mask] - target_lon)**2)
-                idx = np.argmin(distances)
-                return idx, lats[idx], lons[idx]
-            
+            # Find nearest grid points to requested locations (using module-level helper)
             location_indices = []
             for target_lat, target_lon, name in LOCATIONS:
                 idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
@@ -1369,10 +1458,11 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
                         total_per_size = data_2d.sum(axis=1)
                         max_value = max(max_value, np.nanmax(total_per_size))
-            
+            yax_scaler=1.2
             for ax in axs[:n_locations]:
-                ax.set_ylim(0, max_value * 1.1)
-            
+                ax.set_ylim(0, max_value * yax_scaler)
+                ax.set_ylim(0, 0.9)
+            print('max_value', max_value)
             # Animation update function
             current_file = None
             current_ds = None
@@ -1429,6 +1519,231 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 blit=True,
                 repeat=True
             )
+            
+        elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_scatter_sz":
+            print("\n" + "="*60)
+            print("CREATING POINT-BASED SCATTER PLOT (SIZE CLASS)")
+            print("="*60)
+            
+            # Process all PFTs in the list
+            for pft_name in PFT_LIST:
+                pft_upper = pft_name.upper()
+                print(f"\n{'='*60}")
+                print(f"Processing PFT: {pft_upper}")
+                print(f"{'='*60}\n")
+                
+                # Read locations from PFT-specific file
+                print(f"Reading locations from PFT file for {pft_upper}...")
+                LOCATIONS = read_location_file(pft_name, max_sites=8)
+                
+                if not LOCATIONS:
+                    print(f"Skipping PFT: {pft_upper}")
+                    continue
+                
+                print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
+                
+                # Find nearest grid points to requested locations
+                location_indices = []
+                for target_lat, target_lon, name in LOCATIONS:
+                    idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
+                    location_indices.append((idx, actual_lat, actual_lon, name))
+                    print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
+                
+                n_locations = len(location_indices)
+                n_vars = len(VAR_NAMES)
+                
+                # Get size dimension info from first file
+                with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                    first_var = VAR_NAMES[0]
+                    var_data = ds[first_var]
+                    
+                    # Find size or PFT dimension
+                    size_dim = None
+                    for dim in var_data.dims:
+                        if 'size' in dim.lower() or 'levscls' in dim.lower():
+                            size_dim = dim
+                            break
+                    
+                    # If no size dimension found, check for PFT dimension
+                    if size_dim is None:
+                        for dim in var_data.dims:
+                            if 'pft' in dim.lower() or 'levpft' in dim.lower():
+                                size_dim = dim
+                                print(f"Note: Using PFT dimension '{size_dim}' instead of size dimension")
+                                break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not find size or PFT dimension in {first_var}")
+                        print(f"Available dimensions: {var_data.dims}")
+                        exit(1)
+                    
+                    n_sizes = len(ds[size_dim])
+                    is_pft_dim = 'pft' in size_dim.lower()
+                    dim_type = "PFT classes" if is_pft_dim else "size classes"
+                    print(f"\nFound {n_sizes} {dim_type} in dimension '{size_dim}'")
+                    
+                    # Determine spatial dimension
+                    if 'ncol' in var_data.dims:
+                        spatial_dim = 'ncol'
+                    elif 'lndgrid' in var_data.dims:
+                        spatial_dim = 'lndgrid'
+                    else:
+                        print(f"ERROR: No spatial dimension found")
+                        exit(1)
+                    
+                    print(f"Using spatial dimension: {spatial_dim}")
+                
+                # Create labels based on dimension type
+                if is_pft_dim:
+                    size_labels = [f"PFT{i+1}" for i in range(n_sizes)]
+                else:
+                    size_labels = [f"SC{i+1}" for i in range(n_sizes)]
+                x_pos = np.arange(n_sizes)
+                
+                # Define colors and markers for each variable
+                var_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+                var_markers = ['o', 's', '^', 'D', 'v', 'p']
+                
+                # Setup figure - 4 columns by 2 rows grid layout (like case 5)
+                n_cols = 4
+                n_rows = 2
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
+                axs = axs.flatten()
+                
+                # Initialize scatter plots
+                scatter_artists = []
+                for loc_idx in range(n_locations):
+                    loc_scatters = []
+                    grid_idx, actual_lat, actual_lon, name = location_indices[loc_idx]
+                    ax = axs[loc_idx]
+                    
+                    # Plot all variables on the same axes with different colors/markers
+                    for var_idx, VAR_NAME in enumerate(VAR_NAMES):
+                        color = var_colors[var_idx % len(var_colors)]
+                        marker = var_markers[var_idx % len(var_markers)]
+                        
+                        # Initial scatter plot (will be updated in animation)
+                        scatter = ax.scatter(x_pos, np.zeros(n_sizes), s=100, alpha=0.7, 
+                                           color=color, marker=marker, edgecolors='black', 
+                                           linewidths=1.5, label=VAR_NAME.replace('FATES_', ''))
+                        loc_scatters.append(scatter)
+                    
+                    # Setup plot
+                    ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
+                    # Use the first variable's units (assuming all have same units)
+                    ax.set_ylabel(f'{UNIT_LABELS[VAR_NAMES[0]]}', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{name} - Year 0, Month 01', 
+                               fontsize=14, fontweight='bold')
+                    ax.set_xticks(x_pos)
+                    ax.set_xticklabels(size_labels, rotation=45, ha='right')
+                    
+                    ax.grid(axis='both', alpha=0.3, zorder=1)
+                    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+                    
+                    # Add location info text
+                    country_name = get_country(actual_lat, actual_lon)
+                    us_state = get_us_state(actual_lat, actual_lon)
+                    if us_state:
+                        location_text = f"{us_state}, USA - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    else:
+                        location_text = f"{country_name} - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    ax.text(0.02, 0.98, location_text, transform=ax.transAxes, 
+                           fontsize=9, fontweight='bold', ha='left', va='top',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8), zorder=10)
+                    
+                    scatter_artists.append(loc_scatters)
+                
+                # Hide unused subplots
+                for idx in range(n_locations, len(axs)):
+                    axs[idx].axis('off')
+                
+                plt.tight_layout()
+                
+                # Determine y-axis limits by scanning first and last files
+                print("\nDetermining y-axis limits...")
+                max_value_overall = 0
+                sample_files = []
+                if n_times > 0:
+                    sample_files.append(file_time_map[0])
+                if n_times > 1:
+                    sample_files.append(file_time_map[-1])
+                
+                for file_path, time_idx, _ in sample_files:
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        for VAR_NAME in VAR_NAMES:
+                            var_data = ds[VAR_NAME].isel(time=time_idx)
+                            for grid_idx, _, _, _ in location_indices:
+                                data = var_data.isel({spatial_dim: grid_idx}).values
+                                data = data * SCALING_FACTORS[VAR_NAME]
+                                max_value_overall = max(max_value_overall, np.nanmax(data))
+                
+                # Set y-axis limits (same for all locations since all variables share same axes)
+                yax_scaler = 1.2
+                for loc_idx in range(n_locations):
+                    axs[loc_idx].set_ylim(0, max_value_overall * yax_scaler)
+                
+                # Animation update function
+                def update_scatter(frame):
+                    file_path, time_idx, _ = file_time_map[frame]
+                    
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        # Update each subplot
+                        for loc_idx in range(n_locations):
+                            grid_idx, _, _, name = location_indices[loc_idx]
+                            ax = axs[loc_idx]
+                            
+                            for var_idx, VAR_NAME in enumerate(VAR_NAMES):
+                                scatter = scatter_artists[loc_idx][var_idx]
+                                
+                                # Get data for this location and variable
+                                var_data = ds[VAR_NAME].isel(time=time_idx)
+                                data = var_data.isel({spatial_dim: grid_idx}).values
+                                data = data * SCALING_FACTORS[VAR_NAME]
+                                
+                                # Update scatter plot positions
+                                scatter.set_offsets(np.c_[x_pos, data])
+                            
+                            # Update title with time (once per location)
+                            actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
+                            year = actual_timestep // 12
+                            month = actual_timestep % 12 + 1
+                            ax.set_title(f'{name} - Year {year}, Month {month:02d}',
+                                       fontsize=14, fontweight='bold')
+                    
+                    return [scatter for loc_scatters in scatter_artists for scatter in loc_scatters]
+                
+                # Create animation
+                print(f"\nCreating scatter plot animation with {n_times} frames...")
+                anim = animation.FuncAnimation(
+                    fig, update_scatter, frames=n_times,
+                    interval=tint,
+                    blit=True,
+                    repeat=True
+                )
+                
+                # Save animation
+                pft_output_file = OUTPUT_FILE.replace('.gif', f'_{pft_upper}.gif').replace('.mp4', f'_{pft_upper}.mp4')
+                print(f"\nSaving {pft_upper} animation to {pft_output_file}...")
+                
+                output_dir = Path(pft_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                if OUTPUT_FORMAT == "mp4":
+                    import shutil
+                    if shutil.which('ffmpeg') is None:
+                        print("WARNING: ffmpeg not found. Falling back to GIF format.")
+                        pft_output_file = pft_output_file.replace('.mp4', '.gif')
+                        writer = animation.PillowWriter(fps=1000/tint)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                    else:
+                        writer = animation.FFMpegWriter(fps=1000/tint, metadata=dict(artist='FATES Analysis'), bitrate=1800)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                elif OUTPUT_FORMAT == "gif":
+                    writer = animation.PillowWriter(fps=1000/tint)
+                    anim.save(pft_output_file, writer=writer, dpi=100)
+                
+                print(f"Animation saved successfully!")
+                plt.close(fig)
             
         else:
             # Original map-based plotting code
@@ -1611,38 +1926,40 @@ for case in [5]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 repeat=True
             )
     
-        # Save animation as GIF or MP4
-        print(f"\n\nSaving animation to {OUTPUT_FILE}...")
-    
-        # Create output directory if it doesn't exist
-        output_dir = Path(OUTPUT_FILE).parent
-        output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Output directory: {output_dir}")
-    
-        if OUTPUT_FORMAT == "mp4":
-            # Check if ffmpeg is available
-            import shutil
-            if shutil.which('ffmpeg') is None:
-                print("WARNING: ffmpeg not found. Falling back to GIF format.")
-                print("To use MP4, install ffmpeg or run: module load FFmpeg")
-                # Change to GIF format
-                OUTPUT_FILE = OUTPUT_FILE.replace('.mp4', '.gif')
+        # Save animation as GIF or MP4 (only for non-point_bars cases)
+        # point_bars case saves animations within plot_pft_animation function
+        if 'anim' in locals():
+            print(f"\n\nSaving animation to {OUTPUT_FILE}...")
+        
+            # Create output directory if it doesn't exist
+            output_dir = Path(OUTPUT_FILE).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Output directory: {output_dir}")
+        
+            if OUTPUT_FORMAT == "mp4":
+                # Check if ffmpeg is available
+                import shutil
+                if shutil.which('ffmpeg') is None:
+                    print("WARNING: ffmpeg not found. Falling back to GIF format.")
+                    print("To use MP4, install ffmpeg or run: module load FFmpeg")
+                    # Change to GIF format
+                    OUTPUT_FILE = OUTPUT_FILE.replace('.mp4', '.gif')
+                    writer = animation.PillowWriter(fps=2.5)
+                    anim.save(OUTPUT_FILE, writer=writer, dpi=100)
+                else:
+                    writer = animation.FFMpegWriter(fps=2.5, metadata=dict(artist='FATES Analysis'), bitrate=1800)
+                    anim.save(OUTPUT_FILE, writer=writer, dpi=100)
+            else:
                 writer = animation.PillowWriter(fps=2.5)
                 anim.save(OUTPUT_FILE, writer=writer, dpi=100)
-            else:
-                writer = animation.FFMpegWriter(fps=2.5, metadata=dict(artist='FATES Analysis'), bitrate=1800)
-                anim.save(OUTPUT_FILE, writer=writer, dpi=100)
-        else:
-            writer = animation.PillowWriter(fps=2.5)
-            anim.save(OUTPUT_FILE, writer=writer, dpi=100)
-    
-        print(f"\nAnimation successfully saved to: {OUTPUT_FILE}")
-        print(f"Total frames: {n_times}")
-    
-        # Close any open dataset
-        if current_ds is not None:
-            current_ds.close()
-        plt.close(fig)
+        
+            print(f"\nAnimation successfully saved to: {OUTPUT_FILE}")
+            print(f"Total frames: {n_times}")
+        
+            # Close any open dataset (only exists for map-based plots)
+            if 'current_ds' in locals() and current_ds is not None:
+                current_ds.close()
+            plt.close(fig)
     
         print("\nDone!")
 
