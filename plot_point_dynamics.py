@@ -134,7 +134,9 @@ CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP_MS3.25_BT1EBT_bias30j_LU2000.2026-01-30"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT_bias28j_LU2000.2026-01-30"
 CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.2026-01-08"
-#CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.31j.2026-02-01"
+CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.31j.2026-02-01"
+#CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT.2026-01-24"
+#CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP.2026-01-08"
 
 
 DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/lnd/hist/")
@@ -146,7 +148,7 @@ vminv = 1; vmaxv=99
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
 
 # Loop over multiple cases
-for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
+for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
     print(f"\n{'='*80}")
     print(f"PROCESSING CASE {case}")
     print(f"{'='*80}\n")
@@ -233,9 +235,9 @@ for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         fatesarea="FATES_AREA_PLANTS"
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
         UNIT_LABELS = {var: "cm2/ha" for var in VAR_NAMES}
-        YEAR_RANGE = (0, 60) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 12 # Process every Nth timestep 
-        tint=150  # time interval in ms
+        YEAR_RANGE = (0, 40) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 1 # Process every Nth timestep 
+        tint=100  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
         TREE_STYLE = "cloud"  # "christmas" for Christmas tree shape, "cloud" for cloud-shaped crowns
@@ -253,36 +255,30 @@ for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
 
     elif case == 6:
         CASE_NAME = "vegc_szpf_points"
+        CASE_NAME = "AGprod_szpf_points"
+        CASE_NAME = "DDBH__szpf_points"
+
         VAR_NAMES = ["FATES_VEGC_SZPF"]
+        VAR_NAMES = ["FATES_ABOVEGROUND_PROD_SZPF"]
+        VAR_NAMES = ["FATES_DDBH_SZPF"]
+        UNIT_LABELS = {var: "" for var in VAR_NAMES}
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
-        YEAR_RANGE = (0, 30) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 6 # Process every Nth timestep 
+        YEAR_RANGE = (36, 38) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 1 # Process every Nth timestep 
         tint=200  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
-        UNIT_LABELS = {var: "KgC/m2" for var in VAR_NAMES}
+       
         PLOT_TYPE = "point_bars_szpf"  # Stacked bar charts for size x PFT multiplexed data
         # Reference variables to get dimensions
-        SIZE_REF_VAR = "FATES_VEGC_SZ"  # Variable to get number of size classes
+        SIZE_REF_VAR = "FATES_MORTALITY_BACKGROUND_SZ"  # Variable to get number of size classes
         PFT_REF_VAR = "FATES_VEGC_PF"   # Variable to get number of PFT classes
-        # Read locations from file (lat, lon, name)
-        LOCATIONS = []
-        with open('/datalake/NS9560K/www/diagnostics/noresm/rosief/ppe_diags/pft_grid_cells/bet_grid_cells.txt', 'r') as f:
-            site_count = 0
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('lat'):  # Skip empty lines and header
-                    continue
-                if site_count >= 8:  # Only read first 8 sites
-                    break
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        lat = float(parts[0])
-                        lon = float(parts[1])
-                        site_count += 1
-                        LOCATIONS.append((lat, lon, f"ENT{site_count}"))
-                    except ValueError:
-                        continue  # Skip lines that don't parse as numbers
+        
+        # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
+        PFT_LIST = ['ent', 'bet', 'bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        
+        # Convert to list if single string
+        if isinstance(PFT_LIST, str):
+            PFT_LIST = [PFT_LIST]
 
     elif case == 7:
         VAR_NAMES = ["FATES_MORTALITY_BACKGROUND_SZ","FATES_MORTALITY_FIRE_SZ", "FATES_MORTALITY_CSTARV_SZ","FATES_MORTALITY_FREEZING_SZ","FATES_MORTALITY_SENESCENCE_SZ"]
@@ -299,6 +295,52 @@ for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         tint = 150  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         PLOT_TYPE = "point_scatter_sz"  # Scatter plot for size class data
+        SHOW_TEMPERATURE = True  # Show temperature indicator bar and text
+        SHOW_BTRAN = False  # Show BTRAN indicator box at bottom
+        
+        # Control variable for PFTs to plot
+        PFT_LIST = ['ent', 'bet', 'bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        
+        # Convert to list if single string
+        if isinstance(PFT_LIST, str):
+            PFT_LIST = [PFT_LIST]
+
+    elif case == 8:
+        # Case 8: Line graph version of case 7 - time on x-axis, each pft/sz as a line
+        VAR_NAMES = ["FATES_MORTALITY_FIRE_CFLUX_PF","FATES_MORTALITY_HYDRAULIC_CFLUX_PF","FATES_MORTALITY_CSTARV_CFLUX_PF","FATES_MORTALITY_BACKGROUND_CFLUX_PF",
+        "FATES_MORTALITY_SENESCENCE_CFLUX_PF"]
+        #VAR_NAMES = ["FATES_MORTALITY_BACKGROUND_SZ","FATES_MORTALITY_FIRE_SZ", "FATES_MORTALITY_CSTARV_SZ","FATES_MORTALITY_FREEZING_SZ","FATES_MORTALITY_SENESCENCE_SZ"]
+        #VAR_NAMES = ["FATES_VEGC_PF","FATES_LEAFC_PF"]
+        #VAR_NAMES = ["FATES_GPP_PF","FATES_NPP_PF"]
+        CASE_NAME = 'Mortality_sources_pf_timeseries'
+        #CASE_NAME = 'Mortality_sources_sz_timeseries'
+        #CASE_NAME = 'vegc_pf_timeseries'
+        #CASE_NAME = 'carbon_fluxes_pf_timeseries'
+        BACKG_VAR = "BTRAN"
+        fatesarea = "FATES_AREA_PLANTS"
+        
+        # Auto-detect units based on variable names and set scaling factors
+        UNIT_LABELS = {}
+        SCALING_FACTORS = {}
+        for var in VAR_NAMES:
+            if 'CFLUX' in var or 'GPP' in var or 'NPP' in var:
+                # Carbon flux variables - convert from gC/m2/s to KgC/m2/yr
+                SCALING_FACTORS[var] = 3600*24*365
+                UNIT_LABELS[var] = "KgC/m2/yr"
+            elif any(mort_type in var for mort_type in ['MORTALITY_BACKGROUND_SZ', 'MORTALITY_FIRE_SZ', 'MORTALITY_CSTARV_SZ', 'MORTALITY_FREEZING_SZ', 'MORTALITY_SENESCENCE_SZ', 'MORTALITY_HYDRAULIC_SZ']):
+                # Mortality rate variables (per year)
+                SCALING_FACTORS[var] = 1
+                UNIT_LABELS[var] = "fraction/yr"
+            else:
+                # Default
+                SCALING_FACTORS[var] = 1
+                UNIT_LABELS[var] = "unknown units"
+        
+        YEAR_RANGE = (58, 60)  # Year range to process
+        FILE_INTERVAL = 1  # Process every Nth timestep
+        tint = 150  # time interval in ms
+        OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
+        PLOT_TYPE = "point_line_sz"  # Line plot with time on x-axis
         SHOW_TEMPERATURE = True  # Show temperature indicator bar and text
         SHOW_BTRAN = False  # Show BTRAN indicator box at bottom
         
@@ -1289,236 +1331,278 @@ for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
             print("CREATING POINT-BASED STACKED BAR CHART (SIZE x PFT)")
             print("="*60)
             
-            # Find nearest grid points to requested locations (using module-level helper)
-            location_indices = []
-            for target_lat, target_lon, name in LOCATIONS:
-                idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
-                location_indices.append((idx, actual_lat, actual_lon, name))
-                print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
-            
-            # Determine dimensions from reference variables
-            with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                VAR_NAME = VAR_NAMES[0]  # Main multiplexed variable
-                var_data = ds[VAR_NAME]
+            # Process all PFTs in the list
+            for pft_name in PFT_LIST:
+                pft_upper = pft_name.upper()
+                print(f"\n{'='*60}")
+                print(f"Processing PFT: {pft_upper}")
+                print(f"{'='*60}\n")
                 
-                print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
+                # Read locations from PFT-specific file
+                print(f"Reading locations from PFT file for {pft_upper}...")
+                LOCATIONS = read_location_file(pft_name, max_sites=8)
                 
-                # Get size dimension from reference variable
-                if SIZE_REF_VAR in ds.variables:
-                    size_var = ds[SIZE_REF_VAR]
-                    for dim in size_var.dims:
-                        dim_lower = dim.lower()
-                        if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
-                            size_dim = dim
-                            n_sizes = len(ds[size_dim])
-                            print(f"Found {n_sizes} size classes from '{SIZE_REF_VAR}' dimension '{size_dim}'")
+                if not LOCATIONS:
+                    print(f"Skipping PFT: {pft_upper}")
+                    continue
+                
+                print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
+                
+                # Find nearest grid points to requested locations (using module-level helper)
+                location_indices = []
+                for target_lat, target_lon, name in LOCATIONS:
+                    idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
+                    location_indices.append((idx, actual_lat, actual_lon, name))
+                    print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
+                
+                # Determine dimensions from reference variables
+                with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                    VAR_NAME = VAR_NAMES[0]  # Main multiplexed variable
+                    var_data = ds[VAR_NAME]
+                    
+                    print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
+                    
+                    # Get size dimension from reference variable
+                    if SIZE_REF_VAR in ds.variables:
+                        size_var = ds[SIZE_REF_VAR]
+                        for dim in size_var.dims:
+                            dim_lower = dim.lower()
+                            if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
+                                size_dim = dim
+                                n_sizes = len(ds[size_dim])
+                                print(f"Found {n_sizes} size classes from '{SIZE_REF_VAR}' dimension '{size_dim}'")
+                                break
+                    else:
+                        print(f"ERROR: Reference variable '{SIZE_REF_VAR}' not found")
+                        exit(1)
+                    
+                    # Get PFT dimension from reference variable
+                    if PFT_REF_VAR in ds.variables:
+                        pft_var = ds[PFT_REF_VAR]
+                        for dim in pft_var.dims:
+                            dim_lower = dim.lower()
+                            if 'pft' in dim_lower or 'fates_levpft' in dim_lower:
+                                pft_dim = dim
+                                n_pfts = len(ds[pft_dim])
+                                print(f"Found {n_pfts} PFT classes from '{PFT_REF_VAR}' dimension '{pft_dim}'")
+                                break
+                    else:
+                        print(f"ERROR: Reference variable '{PFT_REF_VAR}' not found")
+                        exit(1)
+                    
+                    # Verify multiplexed dimension size
+                    for dim in var_data.dims:
+                        if dim not in ['time', 'ncol', 'lndgrid']:
+                            multiplex_dim = dim
+                            multiplex_size = len(ds[multiplex_dim])
+                            print(f"Multiplexed dimension '{multiplex_dim}' has size {multiplex_size}")
+                            
+                            # Check both orderings
+                            if multiplex_size == n_sizes * n_pfts:
+                                print(f"Confirmed: {multiplex_size} = {n_sizes} sizes × {n_pfts} PFTs")
+                            else:
+                                print(f"WARNING: Expected {n_sizes * n_pfts} but got {multiplex_size}")
                             break
-                else:
-                    print(f"ERROR: Reference variable '{SIZE_REF_VAR}' not found")
-                    exit(1)
-                
-                # Get PFT dimension from reference variable
-                if PFT_REF_VAR in ds.variables:
-                    pft_var = ds[PFT_REF_VAR]
-                    for dim in pft_var.dims:
-                        dim_lower = dim.lower()
-                        if 'pft' in dim_lower or 'fates_levpft' in dim_lower:
-                            pft_dim = dim
-                            n_pfts = len(ds[pft_dim])
-                            print(f"Found {n_pfts} PFT classes from '{PFT_REF_VAR}' dimension '{pft_dim}'")
+                    
+                    # Get size bin labels
+                    size_labels = [f"Size {i+1}" for i in range(n_sizes)]
+                    for size_bounds_var in [f"{size_dim}_bounds", f"fates_{size_dim}_bounds"]:
+                        if size_bounds_var in ds.variables:
+                            size_bounds = ds[size_bounds_var].values
+                            size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
                             break
+                    
+                    # Get PFT labels
+                    pft_labels = [f"PFT {i+1}" for i in range(n_pfts)]
+                    if 'pfts' in ds.variables or 'fates_pftname' in ds.variables:
+                        pft_name_var = 'pfts' if 'pfts' in ds.variables else 'fates_pftname'
+                        try:
+                            pft_names = ds[pft_name_var].values
+                            if hasattr(pft_names[0], 'decode'):
+                                pft_labels = [name.decode('utf-8').strip() for name in pft_names]
+                            else:
+                                pft_labels = [str(name).strip() for name in pft_names]
+                        except:
+                            pass
+                
+                # Define colors for PFTs - use a colormap
+                import matplotlib.cm as cm
+                colors = cm.tab20(np.linspace(0, 1, n_pfts))
+                
+                # Setup figure with subplots for each location
+                n_locations = len(location_indices)
+                n_cols = min(n_locations, 2)
+                n_rows = (n_locations + n_cols - 1) // n_cols
+                
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(12*n_cols, 7*n_rows))
+                if n_locations == 1:
+                    axs = [axs]
                 else:
-                    print(f"ERROR: Reference variable '{PFT_REF_VAR}' not found")
-                    exit(1)
+                    axs = axs.flatten()
                 
-                # Verify multiplexed dimension size
-                for dim in var_data.dims:
-                    if dim not in ['time', 'ncol', 'lndgrid']:
-                        multiplex_dim = dim
-                        multiplex_size = len(ds[multiplex_dim])
-                        print(f"Multiplexed dimension '{multiplex_dim}' has size {multiplex_size}")
-                        
-                        # Check both orderings
-                        if multiplex_size == n_sizes * n_pfts:
-                            print(f"Confirmed: {multiplex_size} = {n_sizes} sizes × {n_pfts} PFTs")
-                        else:
-                            print(f"WARNING: Expected {n_sizes * n_pfts} but got {multiplex_size}")
-                        break
+                # Initialize stacked bar charts
+                bar_containers_by_location = []
+                x_pos = np.arange(n_sizes)
                 
-                # Get size bin labels
-                size_labels = [f"Size {i+1}" for i in range(n_sizes)]
-                for size_bounds_var in [f"{size_dim}_bounds", f"fates_{size_dim}_bounds"]:
-                    if size_bounds_var in ds.variables:
-                        size_bounds = ds[size_bounds_var].values
-                        size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
-                        break
+                # Function to demultiplex data - try both orderings
+                def demultiplex_data(data_1d, n_sizes, n_pfts, order='size_major'):
+                    """Reshape multiplexed 1D data into 2D size x PFT array"""
+                    if order == 'size_major':
+                        # Each size class has all PFTs: [s0p0, s0p1, ..., s0pN, s1p0, s1p1, ...]
+                        return data_1d.reshape(n_sizes, n_pfts)
+                    else:
+                        # Each PFT has all sizes: [p0s0, p0s1, ..., p0sN, p1s0, p1s1, ...]
+                        return data_1d.reshape(n_pfts, n_sizes).T
                 
-                # Get PFT labels
-                pft_labels = [f"PFT {i+1}" for i in range(n_pfts)]
-                if 'pfts' in ds.variables or 'fates_pftname' in ds.variables:
-                    pft_name_var = 'pfts' if 'pfts' in ds.variables else 'fates_pftname'
-                    try:
-                        pft_names = ds[pft_name_var].values
-                        if hasattr(pft_names[0], 'decode'):
-                            pft_labels = [name.decode('utf-8').strip() for name in pft_names]
-                        else:
-                            pft_labels = [str(name).strip() for name in pft_names]
-                    except:
-                        pass
-            
-            # Define colors for PFTs - use a colormap
-            import matplotlib.cm as cm
-            colors = cm.tab20(np.linspace(0, 1, n_pfts))
-            
-            # Setup figure with subplots for each location
-            n_locations = len(location_indices)
-            n_cols = min(n_locations, 2)
-            n_rows = (n_locations + n_cols - 1) // n_cols
-            
-            fig, axs = plt.subplots(n_rows, n_cols, figsize=(12*n_cols, 7*n_rows))
-            if n_locations == 1:
-                axs = [axs]
-            else:
-                axs = axs.flatten()
-            
-            # Initialize stacked bar charts
-            bar_containers_by_location = []
-            x_pos = np.arange(n_sizes)
-            
-            # Function to demultiplex data - try both orderings
-            def demultiplex_data(data_1d, n_sizes, n_pfts, order='size_major'):
-                """Reshape multiplexed 1D data into 2D size x PFT array"""
-                if order == 'size_major':
-                    # Each size class has all PFTs: [s0p0, s0p1, ..., s0pN, s1p0, s1p1, ...]
-                    return data_1d.reshape(n_sizes, n_pfts)
-                else:
-                    # Each PFT has all sizes: [p0s0, p0s1, ..., p0sN, p1s0, p1s1, ...]
-                    return data_1d.reshape(n_pfts, n_sizes).T
-            
-            # Test both orderings with first location to determine which is correct
-            with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
-                var_data = ds[VAR_NAME].isel(time=0)
-                spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                test_data = var_data.isel({spatial_dim: location_indices[0][0]}).values * SCALING_FACTORS[VAR_NAME]
-                
-                # We'll assume size_major ordering by default, but user can change if needed
-                multiplex_order = 'size_major'
-                print(f"\nUsing '{multiplex_order}' ordering for demultiplexing")
-                print("(If plots look wrong, the ordering may need to be changed)")
-            
-            for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
-                ax = axs[loc_idx]
-                
-                # Get first frame data for this location
+                # Test both orderings with first location to determine which is correct
                 with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                     var_data = ds[VAR_NAME].isel(time=0)
                     spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                    data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                    test_data = var_data.isel({spatial_dim: location_indices[0][0]}).values * SCALING_FACTORS[VAR_NAME]
                     
-                    # Demultiplex into size x PFT array
-                    data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
+                    # Data is PFT-major ordered: [p0s0, p0s1, ..., p0sN, p1s0, p1s1, ...]
+                    multiplex_order = 'pft_major'
+                    print(f"\nUsing '{multiplex_order}' ordering for demultiplexing")
+                    print("(If plots look wrong, change multiplex_order to 'size_major')")
                 
-                # Create stacked bar chart
-                bar_containers = []
-                bottom = np.zeros(n_sizes)
-                for pft_idx in range(n_pfts):
-                    bars = ax.bar(x_pos, data_2d[:, pft_idx], bottom=bottom,
-                                 label=pft_labels[pft_idx], color=colors[pft_idx],
-                                 edgecolor='black', linewidth=0.3)
-                    bar_containers.append(bars)
-                    bottom += data_2d[:, pft_idx]
-                
-                bar_containers_by_location.append(bar_containers)
-                
-                ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
-                ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
-                ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year 0, Month 01', 
-                           fontsize=14, fontweight='bold')
-                ax.set_xticks(x_pos)
-                ax.set_xticklabels(size_labels, rotation=45, ha='right')
-                ax.grid(axis='y', alpha=0.3)
-                ax.legend(loc='upper right', fontsize=8, ncol=2)
-            
-            # Hide unused subplots
-            for idx in range(n_locations, len(axs)):
-                axs[idx].axis('off')
-            
-            plt.tight_layout()
-            
-            # Determine y-axis limits
-            print("\nDetermining y-axis limits...")
-            max_value = 0
-            for file_path, time_idx, _ in file_time_map[:min(10, len(file_time_map))]:
-                with xr.open_dataset(file_path, decode_times=False) as ds:
-                    var_data = ds[VAR_NAME].isel(time=time_idx)
-                    spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                    
-                    for grid_idx, _, _, _ in location_indices:
-                        data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
-                        data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
-                        total_per_size = data_2d.sum(axis=1)
-                        max_value = max(max_value, np.nanmax(total_per_size))
-            yax_scaler=1.2
-            for ax in axs[:n_locations]:
-                ax.set_ylim(0, max_value * yax_scaler)
-                ax.set_ylim(0, 0.9)
-            print('max_value', max_value)
-            # Animation update function
-            current_file = None
-            current_ds = None
-            
-            def update_stacked_bars(frame):
-                """Update stacked bar charts for each location"""
-                global current_file, current_ds
-                
-                print(f"\rProcessing frame {frame+1}/{n_times}", end='', flush=True)
-                
-                file_path, time_idx, time_val = file_time_map[frame]
-                
-                if current_file != file_path:
-                    if current_ds is not None:
-                        current_ds.close()
-                    current_ds = xr.open_dataset(file_path, decode_times=False)
-                    current_file = file_path
-                
-                # Update each location's stacked bar chart
                 for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
                     ax = axs[loc_idx]
-                    bar_containers = bar_containers_by_location[loc_idx]
                     
-                    # Get data for this location and timestep
-                    var_data = current_ds[VAR_NAME].isel(time=time_idx)
-                    spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                    data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
-                    data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
+                    # Get first frame data for this location
+                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=0)
+                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
+                        data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                        
+                        # Demultiplex into size x PFT array
+                        data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
                     
-                    # Update bar heights for each PFT
+                    # Create stacked bar chart
+                    bar_containers = []
                     bottom = np.zeros(n_sizes)
                     for pft_idx in range(n_pfts):
-                        bars = bar_containers[pft_idx]
-                        pft_data = data_2d[:, pft_idx]
-                        for bar, height, bot in zip(bars, pft_data, bottom):
-                            bar.set_height(height)
-                            bar.set_y(bot)
-                        bottom += pft_data
+                        bars = ax.bar(x_pos, data_2d[:, pft_idx], bottom=bottom,
+                                     label=pft_labels[pft_idx], color=colors[pft_idx],
+                                     edgecolor='black', linewidth=0.3)
+                        bar_containers.append(bars)
+                        bottom += data_2d[:, pft_idx]
                     
-                    # Update title with current time
-                    actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
-                    year = actual_timestep // 12
-                    month = actual_timestep % 12 + 1
-                    ax.set_title(f'{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year {year}, Month {month:02d}',
+                    bar_containers_by_location.append(bar_containers)
+                    
+                    ax.set_xlabel('Size Class', fontsize=12, fontweight='bold')
+                    ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{VAR_NAME} - {CASENAME}\n{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year 0, Month 01', 
                                fontsize=14, fontweight='bold')
+                    ax.set_xticks(x_pos)
+                    ax.set_xticklabels(size_labels, rotation=45, ha='right')
+                    ax.grid(axis='y', alpha=0.3)
+                    ax.legend(loc='upper right', fontsize=8, ncol=2)
                 
-                return [bar for loc_bars in bar_containers_by_location for bars in loc_bars for bar in bars]
-            
-            # Create animation
-            print(f"\nCreating stacked bar chart animation with {n_times} frames...")
-            anim = animation.FuncAnimation(
-                fig, update_stacked_bars, frames=n_times,
-                interval=tint,
-                blit=True,
-                repeat=True
-            )
+                # Hide unused subplots
+                for idx in range(n_locations, len(axs)):
+                    axs[idx].axis('off')
+                
+                plt.tight_layout()
+                
+                # Determine y-axis limits
+                print("\nDetermining y-axis limits...")
+                max_value = 0
+                # Check last 10 frames instead of first 10
+                for file_path, time_idx, _ in file_time_map[-min(10, len(file_time_map)):]:
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=time_idx)
+                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
+                        
+                        for grid_idx, _, _, _ in location_indices:
+                            data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                            data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
+                            total_per_size = data_2d.sum(axis=1)
+                            max_value = max(max_value, np.nanmax(total_per_size))
+                yax_scaler=1.2
+                for ax in axs[:n_locations]:
+                    ax.set_ylim(0, max_value * yax_scaler)
+                    #ax.set_ylim(0, 0.9)  # Commented out - was overriding calculated limit
+                print('max_value', max_value)
+                # Animation update function
+                current_file = None
+                current_ds = None
+                
+                def update_stacked_bars(frame):
+                    """Update stacked bar charts for each location"""
+                    global current_file, current_ds
+                    
+                    print(f"\rProcessing frame {frame+1}/{n_times}", end='', flush=True)
+                    
+                    file_path, time_idx, time_val = file_time_map[frame]
+                    
+                    if current_file != file_path:
+                        if current_ds is not None:
+                            current_ds.close()
+                        current_ds = xr.open_dataset(file_path, decode_times=False)
+                        current_file = file_path
+                    
+                    # Update each location's stacked bar chart
+                    for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
+                        ax = axs[loc_idx]
+                        bar_containers = bar_containers_by_location[loc_idx]
+                        
+                        # Get data for this location and timestep
+                        var_data = current_ds[VAR_NAME].isel(time=time_idx)
+                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
+                        data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                        data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
+                        
+                        # Update bar heights for each PFT
+                        bottom = np.zeros(n_sizes)
+                        for pft_idx in range(n_pfts):
+                            bars = bar_containers[pft_idx]
+                            pft_data = data_2d[:, pft_idx]
+                            for bar, height, bot in zip(bars, pft_data, bottom):
+                                bar.set_height(height)
+                                bar.set_y(bot)
+                            bottom += pft_data
+                        
+                        # Update title with current time
+                        actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
+                        year = actual_timestep // 12
+                        month = actual_timestep % 12 + 1
+                        ax.set_title(f'{VAR_NAME} - {CASENAME}\n{name} ({actual_lat:.2f}°, {actual_lon:.2f}°) - Year {year}, Month {month:02d}',
+                                   fontsize=14, fontweight='bold')
+                    
+                    return [bar for loc_bars in bar_containers_by_location for bars in loc_bars for bar in bars]
+                
+                # Create animation
+                print(f"\nCreating stacked bar chart animation with {n_times} frames...")
+                anim = animation.FuncAnimation(
+                    fig, update_stacked_bars, frames=n_times,
+                    interval=tint,
+                    blit=True,
+                    repeat=True
+                )
+                
+                # Save animation
+                pft_output_file = OUTPUT_FILE.replace('.gif', f'_{pft_upper}.gif').replace('.mp4', f'_{pft_upper}.mp4')
+                print(f"\nSaving {pft_upper} animation to {pft_output_file}...")
+                
+                output_dir = Path(pft_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                if OUTPUT_FORMAT == "mp4":
+                    import shutil
+                    if shutil.which('ffmpeg') is None:
+                        print("WARNING: ffmpeg not found. Falling back to GIF format.")
+                        pft_output_file = pft_output_file.replace('.mp4', '.gif')
+                        writer = animation.PillowWriter(fps=1000/tint)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                    else:
+                        writer = animation.FFMpegWriter(fps=1000/tint, metadata=dict(artist='FATES Analysis'), bitrate=1800)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                elif OUTPUT_FORMAT == "gif":
+                    writer = animation.PillowWriter(fps=1000/tint)
+                    anim.save(pft_output_file, writer=writer, dpi=100)
+                
+                print(f"Animation saved successfully!")
+                plt.close(fig)
             
         elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_scatter_sz":
             print("\n" + "="*60)
@@ -1743,6 +1827,265 @@ for case in [7]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     anim.save(pft_output_file, writer=writer, dpi=100)
                 
                 print(f"Animation saved successfully!")
+                plt.close(fig)
+            
+        elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_line_sz":
+            print("\n" + "="*60)
+            print("CREATING POINT-BASED LINE PLOT (TIME SERIES) - STATIC")
+            print("="*60)
+            
+            # Process all PFTs in the list
+            for pft_name in PFT_LIST:
+                pft_upper = pft_name.upper()
+                print(f"\n{'='*60}")
+                print(f"Processing PFT: {pft_upper}")
+                print(f"{'='*60}\n")
+                
+                # Read locations from PFT-specific file
+                print(f"Reading locations from PFT file for {pft_upper}...")
+                LOCATIONS = read_location_file(pft_name, max_sites=8)
+                
+                if not LOCATIONS:
+                    print(f"Skipping PFT: {pft_upper}")
+                    continue
+                
+                print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
+                
+                # Find nearest grid points to requested locations
+                location_indices = []
+                for target_lat, target_lon, name in LOCATIONS:
+                    idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
+                    location_indices.append((idx, actual_lat, actual_lon, name))
+                    print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
+                
+                n_locations = len(location_indices)
+                n_vars = len(VAR_NAMES)
+                
+                # Get size dimension info from first file
+                with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                    first_var = VAR_NAMES[0]
+                    var_data = ds[first_var]
+                    
+                    # Find size or PFT dimension
+                    size_dim = None
+                    for dim in var_data.dims:
+                        if 'size' in dim.lower() or 'levscls' in dim.lower():
+                            size_dim = dim
+                            break
+                    
+                    # If no size dimension found, check for PFT dimension
+                    if size_dim is None:
+                        for dim in var_data.dims:
+                            if 'pft' in dim.lower() or 'levpft' in dim.lower():
+                                size_dim = dim
+                                print(f"Note: Using PFT dimension '{size_dim}' instead of size dimension")
+                                break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not find size or PFT dimension in {first_var}")
+                        print(f"Available dimensions: {var_data.dims}")
+                        exit(1)
+                    
+                    n_sizes = len(ds[size_dim])
+                    is_pft_dim = 'pft' in size_dim.lower()
+                    dim_type = "PFT classes" if is_pft_dim else "size classes"
+                    print(f"\nFound {n_sizes} {dim_type} in dimension '{size_dim}'")
+                    
+                    # Determine spatial dimension
+                    if 'ncol' in var_data.dims:
+                        spatial_dim = 'ncol'
+                    elif 'lndgrid' in var_data.dims:
+                        spatial_dim = 'lndgrid'
+                    else:
+                        print(f"ERROR: No spatial dimension found")
+                        exit(1)
+                    
+                    print(f"Using spatial dimension: {spatial_dim}")
+                
+                # Create labels based on dimension type
+                if is_pft_dim:
+                    size_labels = [f"PFT{i+1}" for i in range(n_sizes)]
+                else:
+                    size_labels = [f"SC{i+1}" for i in range(n_sizes)]
+                
+                # Define distinct colors for each variable
+                # Using a custom color palette with high contrast
+                distinct_colors = [
+                    '#1f77b4',  # Blue
+                    '#ff7f0e',  # Orange
+                    '#2ca02c',  # Green
+                    '#d62728',  # Red
+                    '#9467bd',  # Purple
+                    '#8c564b',  # Brown
+                    '#e377c2',  # Pink
+                    '#7f7f7f',  # Gray
+                    '#bcbd22',  # Olive
+                    '#17becf',  # Cyan
+                ]
+                var_colors = [distinct_colors[i % len(distinct_colors)] for i in range(n_vars)]
+                
+                # Define markers for each PFT/size class
+                markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'X', 'P', 'h', '<', '>', 'd']
+                
+                # Load all data for all timesteps
+                print("\nLoading data for all timesteps...")
+                all_data = {}  # Dict: (loc_idx, var_idx) -> array of shape (n_times, n_sizes)
+                time_values = []  # Store time values for x-axis
+                
+                for frame_idx, (file_path, time_idx, time_val) in enumerate(file_time_map):
+                    if frame_idx % 10 == 0:
+                        print(f"\rLoading timestep {frame_idx+1}/{n_times}...", end='', flush=True)
+                    
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        # Store time value (convert to months since start)
+                        actual_timestep = (start_timestep or 0) + (frame_idx * FILE_INTERVAL)
+                        time_values.append(actual_timestep)
+                        
+                        for loc_idx, (grid_idx, _, _, _) in enumerate(location_indices):
+                            for var_idx, VAR_NAME in enumerate(VAR_NAMES):
+                                var_data = ds[VAR_NAME].isel(time=time_idx)
+                                data = var_data.isel({spatial_dim: grid_idx}).values
+                                data = data * SCALING_FACTORS[VAR_NAME]
+                                
+                                key = (loc_idx, var_idx)
+                                if key not in all_data:
+                                    all_data[key] = []
+                                all_data[key].append(data)
+                
+                print(f"\nData loading complete!")
+                
+                # Convert lists to arrays
+                for key in all_data:
+                    all_data[key] = np.array(all_data[key])  # Shape: (n_times, n_sizes)
+                
+                time_values = np.array(time_values)
+                
+                # Setup figure - one subplot per location
+                n_cols = 4
+                n_rows = 2
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(8*n_cols, 6*n_rows))
+                axs = axs.flatten()
+                
+                # Add CASENAME as figure title
+                fig.suptitle(f'{CASENAME}', fontsize=16, fontweight='bold', y=0.995)
+                
+                # Plot all data at once (static plot)
+                # One subplot per site, with variable=color and PFT=marker
+                print("\nCreating line plots...")
+                
+                for loc_idx in range(n_locations):
+                    grid_idx, actual_lat, actual_lon, name = location_indices[loc_idx]
+                    ax = axs[loc_idx]
+                    
+                    # Get location info for title
+                    country_name = get_country(actual_lat, actual_lon)
+                    us_state = get_us_state(actual_lat, actual_lon)
+                    if us_state:
+                        location_str = f"{us_state}, USA"
+                    else:
+                        location_str = country_name
+                    
+                    # Plot each combination of variable and PFT/size class
+                    for var_idx, VAR_NAME in enumerate(VAR_NAMES):
+                        color = var_colors[var_idx % len(var_colors)]
+                        var_label = VAR_NAME.replace('FATES_', '').replace('MORTALITY_', 'M_').replace('_CFLUX_PF', '')
+                        
+                        key = (loc_idx, var_idx)
+                        data_all_times = all_data[key]  # Shape: (n_times, n_sizes)
+                        
+                        for size_idx in range(n_sizes):
+                            marker = markers[size_idx % len(markers)]
+                            y_data = data_all_times[:, size_idx]
+                            
+                            # Create label for legend (only for first variable to show markers, or first size to show colors)
+                            if var_idx == 0 and size_idx < n_sizes:
+                                # Show marker legend
+                                label = f"{size_labels[size_idx]}"
+                            elif size_idx == 0 and var_idx < n_vars:
+                                # Show color legend
+                                label = var_label
+                            else:
+                                label = None
+                            
+                            ax.plot(time_values, y_data, linewidth=1.5, alpha=0.7, 
+                                   color=color, marker=marker, markersize=4, markevery=max(1, len(time_values)//20),
+                                   label=label)
+                    
+                    # Setup plot
+                    ax.set_xlabel('Time (Year-Month)', fontsize=12, fontweight='bold')
+                    ax.set_ylabel(f'{UNIT_LABELS[VAR_NAMES[0]]}', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{name} - {location_str}\nLat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°', 
+                               fontsize=12, fontweight='bold')
+                    
+                    # Format x-axis to show years and months
+                    # Create custom tick labels showing Year-Month
+                    n_ticks = min(10, len(time_values))  # Show up to 10 tick marks
+                    tick_indices = np.linspace(0, len(time_values)-1, n_ticks, dtype=int)
+                    tick_positions = time_values[tick_indices]
+                    tick_labels = [f'Y{int(t//12)}-M{int(t%12+1):02d}' for t in tick_positions]
+                    ax.set_xticks(tick_positions)
+                    ax.set_xticklabels(tick_labels, rotation=45, ha='right')
+                    
+                    ax.grid(axis='both', alpha=0.3, zorder=1)
+                    
+                    # Create custom legend with two sections
+                    from matplotlib.lines import Line2D
+                    # Variable legend (colors)
+                    var_legend_elements = [Line2D([0], [0], color=var_colors[i % len(var_colors)], linewidth=2, 
+                                                  label=VAR_NAMES[i].replace('FATES_', '').replace('MORTALITY_', 'M_').replace('_CFLUX_PF', ''))
+                                          for i in range(n_vars)]
+                    # PFT/Size legend (markers)
+                    pft_legend_elements = [Line2D([0], [0], color='gray', marker=markers[i % len(markers)], 
+                                                  linewidth=0, markersize=6, label=size_labels[i])
+                                          for i in range(n_sizes)]
+                    
+                    # Combine legends
+                    all_legend_elements = var_legend_elements + pft_legend_elements
+                    ax.legend(handles=all_legend_elements, loc='upper right', fontsize=7, ncol=2, framealpha=0.9)
+                    
+                    # Set x-axis limits to full time range
+                    ax.set_xlim(time_values[0], time_values[-1])
+                    
+                    # Add location info text
+                    country_name = get_country(actual_lat, actual_lon)
+                    us_state = get_us_state(actual_lat, actual_lon)
+                    if us_state:
+                        location_text = f"{us_state}, USA - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    else:
+                        location_text = f"{country_name} - Lat: {actual_lat:.2f}°, Lon: {actual_lon:.2f}°"
+                    ax.text(0.02, 0.98, location_text, transform=ax.transAxes, 
+                           fontsize=9, fontweight='bold', ha='left', va='top',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8), zorder=10)
+                
+                # Hide unused subplots
+                for idx in range(n_locations, len(axs)):
+                    axs[idx].axis('off')
+                
+                # Determine y-axis limits from all data
+                print("Determining y-axis limits...")
+                max_value_overall = 0
+                for loc_idx in range(n_locations):
+                    for var_idx in range(n_vars):
+                        key = (loc_idx, var_idx)
+                        data_all_times = all_data[key]  # Shape: (n_times, n_sizes)
+                        max_value_overall = max(max_value_overall, np.nanmax(data_all_times))
+                
+                # Set y-axis limits for all subplots
+                yax_scaler = 1.2
+                for loc_idx in range(n_locations):
+                    axs[loc_idx].set_ylim(0, max_value_overall * yax_scaler)
+                
+                plt.tight_layout()
+                
+                # Save static plot as PNG
+                pft_output_file = OUTPUT_FILE.replace('.gif', f'_{pft_upper}.png').replace('.mp4', f'_{pft_upper}.png')
+                print(f"\nSaving {pft_upper} plot to {pft_output_file}...")
+                
+                output_dir = Path(pft_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                fig.savefig(pft_output_file, dpi=150, bbox_inches='tight')
+                print(f"Plot saved successfully!")
                 plt.close(fig)
             
         else:
