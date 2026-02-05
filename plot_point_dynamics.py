@@ -166,7 +166,7 @@ cmap_choose = 'YlGn'
 vminv = 1; vmaxv=99
 
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
-choose_case = 5
+choose_case = 10
 # Loop over multiple cases
 for case in [choose_case]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
     print(f"\n{'='*80}")
@@ -373,6 +373,53 @@ for case in [choose_case]:  # Specify which cases to run, e.g., [0, 1, 2], [5] f
         # Convert to list if single string
         if isinstance(PFT_LIST, str):
             PFT_LIST = [PFT_LIST]
+
+    elif case == 10:
+        # Case 10: FATES_VEGC_SZPF (size x PFT multiplexed)
+        # Two different meanings of 'PFT':
+        # 1. PFT_LIST: Different sets of sites dominated by each PFT type (ENT/BET/etc.) - creates separate plots
+        # 2. PFT dimension index: The second dimension of vegc_szpf variable - different tree shapes per index
+        CASE_NAME = "vegc_szpf_trees"
+        VAR_NAMES = ["FATES_VEGC_SZPF"]
+        UNIT_LABELS = {var: "kgC/m2" for var in VAR_NAMES}
+        SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
+        YEAR_RANGE = (1, 20) # Year range to process as (start_year, end_year)
+        FILE_INTERVAL = 12 # Process every Nth timestep 
+        tint = 200  # time interval in ms
+        OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
+       
+        PLOT_TYPE = "point_bars_szpf_trees"  # Tree shapes for size x PFT multiplexed data
+        # Reference variables to get dimensions
+        SIZE_REF_VAR = "FATES_NPLANT_SZ"  # Variable to get number of size classes
+        PFT_REF_VAR = "FATES_LAI_PF"   # Variable to get number of PFT classes
+        
+        # Define which PFTs to show (first meaning: sites dominated by each PFT)
+        # Each of these will get a separate plot
+        PFT_CONFIG = {
+            'ent': {'name': 'ENT'},
+            'bet': {'name': 'BET'},
+            'bdt': {'name': 'BDT'}
+        }
+        
+        # Control variable for which PFT-dominated sites to plot
+        PFT_LIST = ['ent','bet','bdt']  # Options: 'ent', 'bet', 'bdt', etc.
+        
+        # Convert to list if single string
+        if isinstance(PFT_LIST, str):
+            PFT_LIST = [PFT_LIST]
+        
+        # Define tree shapes for PFT dimension indices (second meaning: dimension of vegc_szpf)
+        # Index 0: cloud shapes
+        # Index 1: christmas shapes
+        # Index 5: cloud shapes but thinner and taller
+        # All others: christmas shapes
+        PFT_INDEX_TO_SHAPE = {
+            0: {'style': 'cloud', 'color': '#4a7c30', 'width_scale': 1.0, 'height_scale': 1.0},
+            1: {'style': 'christmas', 'color': '#2d5016', 'width_scale': 1.0, 'height_scale': 1.0},
+            5: {'style': 'cloud', 'color': '#66bb6a', 'width_scale': 0.6, 'height_scale': 1.3},
+            # Default for all other indices
+            'default': {'style': 'christmas', 'color': '#8b4513', 'width_scale': 1.0, 'height_scale': 1.0}
+        }
 
 
     # Convert to list if single string provided
@@ -1416,32 +1463,36 @@ for case in [choose_case]:  # Specify which cases to run, e.g., [0, 1, 2], [5] f
                     
                     print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
                     
-                    # Get size dimension from reference variable
-                    if SIZE_REF_VAR in ds.variables:
-                        size_var = ds[SIZE_REF_VAR]
-                        for dim in size_var.dims:
-                            dim_lower = dim.lower()
-                            if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
-                                size_dim = dim
-                                n_sizes = len(ds[size_dim])
-                                print(f"Found {n_sizes} size classes from '{SIZE_REF_VAR}' dimension '{size_dim}'")
-                                break
-                    else:
-                        print(f"ERROR: Reference variable '{SIZE_REF_VAR}' not found")
+                    # Get size dimension directly from dataset dimensions
+                    size_dim = None
+                    n_sizes = None
+                    for dim in ds.dims:
+                        dim_lower = dim.lower()
+                        if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
+                            size_dim = dim
+                            n_sizes = len(ds[size_dim])
+                            print(f"Found {n_sizes} size classes from dimension '{size_dim}'")
+                            break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not determine size dimension")
+                        print(f"Available dimensions: {list(ds.dims.keys())}")
                         exit(1)
                     
-                    # Get PFT dimension from reference variable
-                    if PFT_REF_VAR in ds.variables:
-                        pft_var = ds[PFT_REF_VAR]
-                        for dim in pft_var.dims:
-                            dim_lower = dim.lower()
-                            if 'pft' in dim_lower or 'fates_levpft' in dim_lower:
-                                pft_dim = dim
-                                n_pfts = len(ds[pft_dim])
-                                print(f"Found {n_pfts} PFT classes from '{PFT_REF_VAR}' dimension '{pft_dim}'")
-                                break
-                    else:
-                        print(f"ERROR: Reference variable '{PFT_REF_VAR}' not found")
+                    # Get PFT dimension directly from dataset dimensions
+                    pft_dim = None
+                    n_pfts = None
+                    for dim in ds.dims:
+                        dim_lower = dim.lower()
+                        if 'pft' in dim_lower or 'fates_levpft' in dim_lower or 'levpft' in dim_lower:
+                            pft_dim = dim
+                            n_pfts = len(ds[pft_dim])
+                            print(f"Found {n_pfts} PFT classes from dimension '{pft_dim}'")
+                            break
+                    
+                    if pft_dim is None:
+                        print(f"ERROR: Could not determine PFT dimension")
+                        print(f"Available dimensions: {list(ds.dims.keys())}")
                         exit(1)
                     
                     # Verify multiplexed dimension size
@@ -1673,6 +1724,409 @@ for case in [choose_case]:  # Specify which cases to run, e.g., [0, 1, 2], [5] f
                 print(f"\nCreating stacked bar chart animation with {n_times} frames...")
                 anim = animation.FuncAnimation(
                     fig, update_stacked_bars, frames=n_times,
+                    interval=tint,
+                    blit=True,
+                    repeat=True
+                )
+                
+                # Save animation
+                pft_output_file = OUTPUT_FILE.replace('.gif', f'_{pft_upper}.gif').replace('.mp4', f'_{pft_upper}.mp4')
+                print(f"\nSaving {pft_upper} animation to {pft_output_file}...")
+                
+                output_dir = Path(pft_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                if OUTPUT_FORMAT == "mp4":
+                    import shutil
+                    if shutil.which('ffmpeg') is None:
+                        print("WARNING: ffmpeg not found. Falling back to GIF format.")
+                        pft_output_file = pft_output_file.replace('.mp4', '.gif')
+                        writer = animation.PillowWriter(fps=1000/tint)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                    else:
+                        writer = animation.FFMpegWriter(fps=1000/tint, metadata=dict(artist='FATES Analysis'), bitrate=1800)
+                        anim.save(pft_output_file, writer=writer, dpi=100)
+                elif OUTPUT_FORMAT == "gif":
+                    writer = animation.PillowWriter(fps=1000/tint)
+                    anim.save(pft_output_file, writer=writer, dpi=100)
+                
+                print(f"Animation saved successfully!")
+                plt.close(fig)
+            
+        elif 'PLOT_TYPE' in locals() and PLOT_TYPE == "point_bars_szpf_trees":
+            print("\n" + "="*60)
+            print("CREATING TREE-SHAPED BARS FOR SIZE x PFT DATA")
+            print("="*60)
+            
+            # Process each PFT in the list
+            for pft_name in PFT_LIST:
+                pft_upper = pft_name.upper()
+                print(f"\n{'='*60}")
+                print(f"Processing PFT: {pft_upper}")
+                print(f"{'='*60}\n")
+                
+                # Read locations from PFT-specific file
+                print(f"Reading locations from PFT file for {pft_upper}...")
+                LOCATIONS = read_location_file(pft_name, max_sites=8)
+                
+                if not LOCATIONS:
+                    print(f"Skipping PFT: {pft_upper}")
+                    continue
+                
+                print(f"Loaded {len(LOCATIONS)} locations for {pft_upper}")
+                
+                # Find nearest grid points (using lat/lon from first file)
+                with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                    lat = ds.lat.values
+                    lon = ds.lon.values
+                
+                location_indices = []
+                for target_lat, target_lon, name in LOCATIONS:
+                    idx, actual_lat, actual_lon = find_nearest_point(target_lat, target_lon, lat, lon)
+                    location_indices.append((idx, actual_lat, actual_lon, name))
+                    print(f"Location '{name}': target=({target_lat}, {target_lon}), actual=({actual_lat:.2f}, {actual_lon:.2f}), idx={idx}")
+                
+                # Get dimensions from first file
+                with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                    VAR_NAME = VAR_NAMES[0]
+                    var_data = ds[VAR_NAME]
+                    
+                    print(f"\nVariable '{VAR_NAME}' dimensions: {var_data.dims}")
+                    
+                    # Get size dimension directly from dataset dimensions
+                    size_dim = None
+                    n_sizes = None
+                    for dim in ds.dims:
+                        dim_lower = dim.lower()
+                        if any(pattern in dim_lower for pattern in ['size', 'sz', 'fates_levscls', 'levscls']):
+                            size_dim = dim
+                            n_sizes = len(ds[size_dim])
+                            print(f"Found {n_sizes} size classes from dimension '{size_dim}'")
+                            break
+                    
+                    if size_dim is None:
+                        print(f"ERROR: Could not determine size dimension")
+                        print(f"Available dimensions: {list(ds.dims.keys())}")
+                        continue
+                    
+                    # Get PFT dimension directly from dataset dimensions
+                    pft_dim = None
+                    n_pfts = None
+                    for dim in ds.dims:
+                        dim_lower = dim.lower()
+                        if 'pft' in dim_lower or 'fates_levpft' in dim_lower or 'levpft' in dim_lower:
+                            pft_dim = dim
+                            n_pfts = len(ds[pft_dim])
+                            print(f"Found {n_pfts} PFT classes from dimension '{pft_dim}'")
+                            break
+                    
+                    if pft_dim is None:
+                        print(f"ERROR: Could not determine PFT dimension")
+                        print(f"Available dimensions: {list(ds.dims.keys())}")
+                        continue
+                    
+                    # Get multiplexed dimension
+                    multiplex_dim = None
+                    for dim in var_data.dims:
+                        if dim not in ['time', 'lat', 'lon', 'ncol', 'lndgrid']:
+                            multiplex_dim = dim
+                            multiplex_size = len(ds[multiplex_dim])
+                            print(f"Multiplexed dimension '{multiplex_dim}' has size {multiplex_size}")
+                            if multiplex_size == n_sizes * n_pfts:
+                                print(f"Confirmed: {multiplex_size} = {n_sizes} sizes × {n_pfts} PFTs")
+                            break
+                    
+                    # Get size labels
+                    if f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
+                        size_bounds_var = f"{size_dim}_bounds" if f"{size_dim}_bounds" in ds.variables else f"fates_{size_dim}_bounds"
+                        size_bounds = ds[size_bounds_var].values
+                        size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
+                    else:
+                        size_values = ds[size_dim].values
+                        size_labels = [f"{val:.0f}" for val in size_values]
+                    
+                    # Get PFT labels and styles based on PFT dimension index
+                    # Use PFT_INDEX_TO_SHAPE to assign tree shapes based on index
+                    pft_labels = []
+                    pft_styles = []
+                    pft_colors = []
+                    pft_width_scales = []
+                    pft_height_scales = []
+                    
+                    if 'pfts' in ds.variables or 'fates_pftname' in ds.variables:
+                        pft_name_var = 'pfts' if 'pfts' in ds.variables else 'fates_pftname'
+                        pft_names = ds[pft_name_var].values
+                        if hasattr(pft_names[0], 'decode'):
+                            pft_names = [name.decode('utf-8').strip() for name in pft_names]
+                        else:
+                            pft_names = [str(name).strip() for name in pft_names]
+                        
+                        # Use PFT index to determine tree shape (not the PFT name)
+                        for i, pft_full_name in enumerate(pft_names):
+                            pft_labels.append(f"PFT{i+1}")
+                            
+                            # Get shape configuration for this index
+                            shape_config = PFT_INDEX_TO_SHAPE.get(i, PFT_INDEX_TO_SHAPE['default'])
+                            pft_styles.append(shape_config['style'])
+                            pft_colors.append(shape_config['color'])
+                            pft_width_scales.append(shape_config['width_scale'])
+                            pft_height_scales.append(shape_config['height_scale'])
+                    else:
+                        # Default configuration based on index
+                        for i in range(n_pfts):
+                            pft_labels.append(f"PFT{i+1}")
+                            shape_config = PFT_INDEX_TO_SHAPE.get(i, PFT_INDEX_TO_SHAPE['default'])
+                            pft_styles.append(shape_config['style'])
+                            pft_colors.append(shape_config['color'])
+                            pft_width_scales.append(shape_config['width_scale'])
+                            pft_height_scales.append(shape_config['height_scale'])
+                
+                # Demultiplex function (PFT-major ordering)
+                def demultiplex_data(data_1d, n_sizes, n_pfts):
+                    """Reshape multiplexed 1D data into 2D size x PFT array (PFT-major)"""
+                    return data_1d.reshape(n_pfts, n_sizes).T
+                
+                # Tree shape creation function
+                def create_tree_shape(x_center, height, base_width=0.3, style="christmas", 
+                                     width_scale_factor=1.0, height_scale_factor=1.0):
+                    """Create a tree-shaped polygon for visualization
+                    Args:
+                        x_center: X position of the tree center
+                        height: Height value where the TOP of the tree should be plotted
+                        base_width: Base width scaling factor
+                        style: 'christmas' for Christmas tree or 'cloud' for cloud-shaped crown
+                        width_scale_factor: Additional width scaling (for thin/wide trees)
+                        height_scale_factor: Additional height scaling (for tall/short trees)
+                    """
+                    if np.isscalar(height) and height <= 0:
+                        return None  # No visible tree for zero values
+                    elif not np.isscalar(height) and (height <= 0).any():
+                        return None
+                    
+                    # Apply height scaling
+                    height = height * height_scale_factor
+                    
+                    # Scale tree width based on height and additional width factor
+                    width_scale = 0.3 + (float(np.mean(height)) if not np.isscalar(height) else height) / 100.0 * 0.5
+                    width = base_width * width_scale * width_scale_factor
+                    
+                    # Tree trunk (bottom 15%) and crown proportions
+                    trunk_proportion = 0.15
+                    
+                    if style == "cloud":
+                        # Cloud-shaped crown
+                        trunk_height = float(height) * trunk_proportion if np.isscalar(height) else float(np.mean(height)) * trunk_proportion
+                        tree_base = 0
+                        crown_height = float(height) - trunk_height if np.isscalar(height) else float(np.mean(height)) - trunk_height
+                        trunk_width = width * 0.15
+                        
+                        n_bumps = 5
+                        vertices = [[x_center - trunk_width/2, tree_base], [x_center - trunk_width/2, trunk_height]]
+                        
+                        for i in range(n_bumps + 1):
+                            angle = np.pi * i / n_bumps
+                            bump_x = x_center + (width/2) * np.cos(angle)
+                            bump_y = trunk_height + crown_height * (1 - 0.3 * abs(np.sin(angle * 2)))
+                            vertices.append([bump_x, bump_y])
+                        
+                        vertices.append([x_center + trunk_width/2, trunk_height])
+                        vertices.append([x_center + trunk_width/2, tree_base])
+                    else:
+                        # Christmas tree (layered tiers)
+                        trunk_height = float(height) * trunk_proportion if np.isscalar(height) else float(np.mean(height)) * trunk_proportion
+                        tree_base = 0
+                        crown_height = float(height) - trunk_height if np.isscalar(height) else float(np.mean(height)) - trunk_height
+                        trunk_width = width * 0.15
+                        n_tiers = 4
+                        
+                        vertices = [[x_center - trunk_width/2, tree_base], [x_center - trunk_width/2, trunk_height]]
+                        
+                        for i in range(n_tiers):
+                            tier_bottom = trunk_height + (i * crown_height / n_tiers)
+                            tier_mid = trunk_height + ((i + 0.5) * crown_height / n_tiers)
+                            bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
+                            mid_width_ratio = 1.0 - ((i + 0.5) * 0.7 / n_tiers)
+                            vertices.append([x_center - width/2 * bottom_width_ratio, tier_bottom])
+                            vertices.append([x_center - width/2 * mid_width_ratio * 0.7, tier_mid])
+                        
+                        vertices.append([x_center, float(height) if np.isscalar(height) else float(np.mean(height))])
+                        
+                        for i in range(n_tiers - 1, -1, -1):
+                            tier_bottom = trunk_height + (i * crown_height / n_tiers)
+                            tier_mid = trunk_height + ((i + 0.5) * crown_height / n_tiers)
+                            bottom_width_ratio = 1.0 - (i * 0.7 / n_tiers)
+                            mid_width_ratio = 1.0 - ((i + 0.5) * 0.7 / n_tiers)
+                            vertices.append([x_center + width/2 * mid_width_ratio * 0.7, tier_mid])
+                            vertices.append([x_center + width/2 * bottom_width_ratio, tier_bottom])
+                        
+                        vertices.append([x_center + trunk_width/2, trunk_height])
+                        vertices.append([x_center + trunk_width/2, tree_base])
+                    
+                    return Polygon(vertices, closed=True)
+                
+                # Setup figure
+                n_locations = len(location_indices)
+                n_cols = min(n_locations, 4)
+                n_rows = (n_locations + n_cols - 1) // n_cols
+                
+                fig, axs = plt.subplots(n_rows, n_cols, figsize=(14*n_cols/4, 8*n_rows/2))
+                if n_locations == 1:
+                    axs = [axs]
+                else:
+                    axs = axs.flatten()
+                
+                # Initialize tree collections for each location
+                tree_collections_by_location = []
+                x_pos = np.arange(n_sizes)
+                
+                for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
+                    ax = axs[loc_idx]
+                    
+                    # Get first frame data
+                    with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=0)
+                        
+                        # Extract data based on grid type
+                        if 'ncol' in var_data.dims:
+                            data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lndgrid' in var_data.dims:
+                            data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            lat_idx = grid_idx // len(ds.lon)
+                            lon_idx = grid_idx % len(ds.lon)
+                            data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                        else:
+                            data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
+                        
+                        # Demultiplex into size x PFT array
+                        data_2d = demultiplex_data(data_1d, n_sizes, n_pfts)
+                    
+                    # Create tree collections for each PFT (overlaid)
+                    pft_tree_collections = []
+                    for pft_idx in range(n_pfts):
+                        trees = []
+                        for size_idx, height in enumerate(data_2d[:, pft_idx]):
+                            if height > 0:
+                                tree = create_tree_shape(x_pos[size_idx], height, 
+                                                              base_width=0.8, 
+                                                              style=pft_styles[pft_idx],
+                                                              width_scale_factor=pft_width_scales[pft_idx],
+                                                              height_scale_factor=pft_height_scales[pft_idx])
+                                if tree is not None:
+                                    trees.append(tree)
+                        
+                        if trees:
+                            collection = PatchCollection(trees, facecolors=pft_colors[pft_idx],
+                                                        edgecolors='darkgreen', linewidths=1.0,
+                                                        alpha=0.7, zorder=2+pft_idx,
+                                                        label=pft_labels[pft_idx])
+                            ax.add_collection(collection)
+                            pft_tree_collections.append((collection, trees, pft_idx))
+                    
+                    tree_collections_by_location.append(pft_tree_collections)
+                    
+                    ax.set_xlabel('Size Class (cm)', fontsize=12, fontweight='bold')
+                    ax.set_ylabel(f'{UNIT_LABELS[VAR_NAME]}', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{VAR_NAME} - {name}\nYear 0, Month 01', 
+                               fontsize=14, fontweight='bold')
+                    ax.set_xticks(x_pos)
+                    ax.set_xticklabels(size_labels, rotation=45, ha='right')
+                    ax.grid(axis='y', alpha=0.3)
+                    ax.legend(loc='upper right', fontsize=10)
+                
+                # Hide unused subplots
+                for idx in range(n_locations, len(axs)):
+                    axs[idx].axis('off')
+                
+                plt.tight_layout()
+                
+                # Determine y-axis limits
+                max_value = 0
+                for file_path, time_idx, _ in file_time_map[-min(10, len(file_time_map)):]:
+                    with xr.open_dataset(file_path, decode_times=False) as ds:
+                        var_data = ds[VAR_NAME].isel(time=time_idx)
+                        for grid_idx, _, _, _ in location_indices:
+                            if 'ncol' in var_data.dims:
+                                data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                            elif 'lndgrid' in var_data.dims:
+                                data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                            elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                                lat_idx = grid_idx // len(ds.lon)
+                                lon_idx = grid_idx % len(ds.lon)
+                                data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                            else:
+                                data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
+                            data_2d = demultiplex_data(data_1d, n_sizes, n_pfts)
+                            max_value = max(max_value, np.nanmax(data_2d))
+                
+                for ax in axs[:n_locations]:
+                    ax.set_ylim(0, max_value * 1.2)
+                
+                # Animation update function
+                current_file = None
+                current_ds = None
+                
+                def update_trees(frame):
+                    global current_file, current_ds
+                    print(f"\rProcessing frame {frame+1}/{n_times}", end='', flush=True)
+                    
+                    file_path, time_idx, time_val = file_time_map[frame]
+                    
+                    if current_file != file_path:
+                        if current_ds is not None:
+                            current_ds.close()
+                        current_ds = xr.open_dataset(file_path, decode_times=False)
+                        current_file = file_path
+                    
+                    # Update each location
+                    for loc_idx, (grid_idx, actual_lat, actual_lon, name) in enumerate(location_indices):
+                        ax = axs[loc_idx]
+                        pft_collections = tree_collections_by_location[loc_idx]
+                        
+                        # Get data
+                        var_data = current_ds[VAR_NAME].isel(time=time_idx)
+                        if 'ncol' in var_data.dims:
+                            data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lndgrid' in var_data.dims:
+                            data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            lat_idx = grid_idx // len(current_ds.lon)
+                            lon_idx = grid_idx % len(current_ds.lon)
+                            data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                        else:
+                            data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
+                        
+                        data_2d = demultiplex_data(data_1d, n_sizes, n_pfts)
+                        
+                        # Update each PFT's trees
+                        for collection, old_trees, pft_idx in pft_collections:
+                            new_trees = []
+                            for size_idx, height in enumerate(data_2d[:, pft_idx]):
+                                if height > 0:
+                                    tree = create_tree_shape(x_pos[size_idx], height,
+                                                           base_width=0.8,
+                                                           style=pft_styles[pft_idx],
+                                                           width_scale_factor=pft_width_scales[pft_idx],
+                                                           height_scale_factor=pft_height_scales[pft_idx])
+                                    if tree is not None:
+                                        new_trees.append(tree)
+                            
+                            if new_trees:
+                                collection.set_paths(new_trees)
+                        
+                        # Update title
+                        actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
+                        year = actual_timestep // 12
+                        month = actual_timestep % 12 + 1
+                        ax.set_title(f'{VAR_NAME} - {name}\nYear {year}, Month {month:02d}',
+                                   fontsize=14, fontweight='bold')
+                    
+                    return [coll for loc_colls in tree_collections_by_location for coll, _, _ in loc_colls]
+                
+                # Create animation
+                print(f"\nCreating tree animation with {n_times} frames...")
+                anim = animation.FuncAnimation(
+                    fig, update_trees, frames=n_times,
                     interval=tint,
                     blit=True,
                     repeat=True
