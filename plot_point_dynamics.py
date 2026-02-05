@@ -27,16 +27,27 @@ from shapely.prepared import prep
 
 def find_nearest_point(target_lat, target_lon, lats, lons):
     """Find the nearest grid point to target lat/lon"""
-    valid_mask = ~(np.isnan(lats) | np.isnan(lons))
+    # Check if we have a structured grid (2D) or unstructured (1D)
+    if lats.ndim == 1 and lons.ndim == 1 and lats.shape != lons.shape:
+        # Structured grid: create meshgrid
+        lons_2d, lats_2d = np.meshgrid(lons, lats)
+        lats_flat = lats_2d.flatten()
+        lons_flat = lons_2d.flatten()
+    else:
+        # Unstructured grid or already in correct format
+        lats_flat = lats.flatten()
+        lons_flat = lons.flatten()
+    
+    valid_mask = ~(np.isnan(lats_flat) | np.isnan(lons_flat))
     if not np.any(valid_mask):
         print("ERROR: All lat/lon coordinates are NaN!")
         return 0, np.nan, np.nan
     
-    distances = np.full_like(lats, np.inf)
-    distances[valid_mask] = np.sqrt((lats[valid_mask] - target_lat)**2 + 
-                                    (lons[valid_mask] - target_lon)**2)
+    distances = np.full_like(lats_flat, np.inf)
+    distances[valid_mask] = np.sqrt((lats_flat[valid_mask] - target_lat)**2 + 
+                                    (lons_flat[valid_mask] - target_lon)**2)
     idx = np.argmin(distances)
-    return idx, lats[idx], lons[idx]
+    return idx, lats_flat[idx], lons_flat[idx]
 
 def get_country(lat, lon):
     """Get country name from lat/lon coordinates using cartopy"""
@@ -137,18 +148,27 @@ CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.2026-01-08"
 CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.31j.2026-02-01"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT.2026-01-24"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP.2026-01-08"
+CASENAME="noresm_beta07_crujra_ppe_2000_v12_n02"
+
 
 
 DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/lnd/hist/")
+
+Jessie_run=1
+if(Jessie_run==1):
+    DATA_PATH="/datalake/NS9188K/share/jessien/feb26/ent_params/"
+    CASENAME="noresm-fates_f45_2000s_ent_agbonly.2026-02-03"
+    DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/run/")
+
 
 SAME_COLOR_SCALE = True  # Set to True to use same color scale for all variables
 cmap_choose = 'YlGn'
 vminv = 1; vmaxv=99
 
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
-
+choose_case = 5
 # Loop over multiple cases
-for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
+for case in [choose_case]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point dynamics, or [6] for szpf
     print(f"\n{'='*80}")
     print(f"PROCESSING CASE {case}")
     print(f"{'='*80}\n")
@@ -227,7 +247,7 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         vmaxv=98
 
     elif case == 5:
-        VAR_NAMES = ["FATES_VEGC_ABOVEGROUND_SZ"]
+        VAR_NAMES = ["FATES_NPLANT_SZ"]
         #VAR_NAMES = ["FATES_NPLANT_SZ"]
         #VAR_NAMES = ["FATES_VEGC_BASAL_AREA"]\
         CASE_NAME = VAR_NAMES[0]+'points'
@@ -235,8 +255,8 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         fatesarea="FATES_AREA_PLANTS"
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
         UNIT_LABELS = {var: "cm2/ha" for var in VAR_NAMES}
-        YEAR_RANGE = (0, 40) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 1 # Process every Nth timestep 
+        YEAR_RANGE = (0, 80) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 12 # Process every Nth timestep 
         tint=100  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
         PLOT_TYPE = "point_bars"  # Special plot type for bar charts at points
@@ -246,7 +266,8 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         SHOW_BTRAN = False  # Show BTRAN indicator box at bottom
         
         # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
-        PFT_LIST = ['ent','bet','bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
+        PFT_LIST = ['ent','bet','bdt']  # Options: 'ent', 
+        PFT_LIST = ['ent']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
         
         # Convert to list if single string
         if isinstance(PFT_LIST, str):
@@ -259,19 +280,19 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         CASE_NAME = "DDBH__szpf_points"
 
         VAR_NAMES = ["FATES_VEGC_SZPF"]
-        VAR_NAMES = ["FATES_ABOVEGROUND_PROD_SZPF"]
-        VAR_NAMES = ["FATES_DDBH_SZPF"]
+        #VAR_NAMES = ["FATES_ABOVEGROUND_PROD_SZPF"]
+        #VAR_NAMES = ["FATES_DDBH_SZPF"]
         UNIT_LABELS = {var: "" for var in VAR_NAMES}
         SCALING_FACTORS = {var: 1 for var in VAR_NAMES}
-        YEAR_RANGE = (36, 38) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 1 # Process every Nth timestep 
+        YEAR_RANGE = (1, 80) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 12 # Process every Nth timestep 
         tint=200  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
        
         PLOT_TYPE = "point_bars_szpf"  # Stacked bar charts for size x PFT multiplexed data
         # Reference variables to get dimensions
-        SIZE_REF_VAR = "FATES_MORTALITY_BACKGROUND_SZ"  # Variable to get number of size classes
-        PFT_REF_VAR = "FATES_VEGC_PF"   # Variable to get number of PFT classes
+        SIZE_REF_VAR = "FATES_NPLANT_SZ"  # Variable to get number of size classes
+        PFT_REF_VAR = "FATES_LAI_PF"   # Variable to get number of PFT classes
         
         # Control variable for PFTs to plot - can be a list like ['ent', 'bet', 'bdt'] or single string 'ent'
         PFT_LIST = ['ent', 'bet', 'bdt']  # Options: 'ent', 'bet', 'bdt', 'ndt', 'sht', etc.
@@ -312,10 +333,12 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
         #VAR_NAMES = ["FATES_MORTALITY_BACKGROUND_SZ","FATES_MORTALITY_FIRE_SZ", "FATES_MORTALITY_CSTARV_SZ","FATES_MORTALITY_FREEZING_SZ","FATES_MORTALITY_SENESCENCE_SZ"]
         #VAR_NAMES = ["FATES_VEGC_PF","FATES_LEAFC_PF"]
         #VAR_NAMES = ["FATES_GPP_PF","FATES_NPP_PF"]
+        VAR_NAMES = ["FATES_VEGC_ABOVEGROUND_SZ","FATES_BASALAREA_SZ"]
         CASE_NAME = 'Mortality_sources_pf_timeseries'
         #CASE_NAME = 'Mortality_sources_sz_timeseries'
         #CASE_NAME = 'vegc_pf_timeseries'
         #CASE_NAME = 'carbon_fluxes_pf_timeseries'
+        CASE_NAME = 'size_structure_timeseries'
         BACKG_VAR = "BTRAN"
         fatesarea = "FATES_AREA_PLANTS"
         
@@ -336,7 +359,7 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 SCALING_FACTORS[var] = 1
                 UNIT_LABELS[var] = "unknown units"
         
-        YEAR_RANGE = (58, 60)  # Year range to process
+        YEAR_RANGE = (20, 30)  # Year range to process
         FILE_INTERVAL = 1  # Process every Nth timestep
         tint = 150  # time interval in ms
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
@@ -905,18 +928,17 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                         var_data = ds[VAR_NAME].isel(time=0)
                         
-                        # Determine spatial dimension
-                        spatial_dim = None
+                        # Extract data for this location based on grid type
                         if 'ncol' in var_data.dims:
-                            spatial_dim = 'ncol'
+                            data = var_data.isel(ncol=grid_idx).values
                         elif 'lndgrid' in var_data.dims:
-                            spatial_dim = 'lndgrid'
-                        
-                        if spatial_dim:
-                            # Unstructured grid - select by spatial index
-                            data = var_data.isel({spatial_dim: grid_idx}).values
+                            data = var_data.isel(lndgrid=grid_idx).values
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            # Structured grid - convert flattened index to 2D indices
+                            lat_idx = grid_idx // len(ds.lon)
+                            lon_idx = grid_idx % len(ds.lon)
+                            data = var_data.isel(lat=lat_idx, lon=lon_idx).values
                         else:
-                            # Regular grid - this shouldn't happen for FATES data
                             print(f"Warning: Could not determine spatial dimension for location {name}")
                             data = np.zeros(n_sizes)
                         
@@ -987,10 +1009,17 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                             spatial_dim = 'lndgrid'
                         
                         for grid_idx, _, _, _ in location_indices:
-                            if spatial_dim:
-                                data = var_data.isel({spatial_dim: grid_idx}).values
+                            if 'ncol' in var_data.dims:
+                                data = var_data.isel(ncol=grid_idx).values
+                            elif 'lndgrid' in var_data.dims:
+                                data = var_data.isel(lndgrid=grid_idx).values
+                            elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                                # Structured grid - convert flattened index to 2D indices
+                                lat_idx = grid_idx // len(ds.lon)
+                                lon_idx = grid_idx % len(ds.lon)
+                                data = var_data.isel(lat=lat_idx, lon=lon_idx).values
                             else:
-                                data = var_data.values
+                                data = var_data.values.flatten()[grid_idx] if var_data.values.size > 1 else var_data.values
                             data = data * scaling_factors[VAR_NAME]
                             max_value = max(max_value, np.nanmax(data))
                 
@@ -1016,11 +1045,15 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                             if backg_var in ds.variables:
                                 btran_data = ds[backg_var].isel(time=0)
-                                # Determine spatial dimension
+                                # Extract data based on grid type
                                 if 'ncol' in btran_data.dims:
                                     btran_val = btran_data.isel(ncol=grid_idx).values
                                 elif 'lndgrid' in btran_data.dims:
                                     btran_val = btran_data.isel(lndgrid=grid_idx).values
+                                elif 'lat' in btran_data.dims and 'lon' in btran_data.dims:
+                                    lat_idx = grid_idx // len(ds.lon)
+                                    lon_idx = grid_idx % len(ds.lon)
+                                    btran_val = btran_data.isel(lat=lat_idx, lon=lon_idx).values
                                 else:
                                     btran_val = 0.5  # Default if spatial dim not found
                                 
@@ -1031,6 +1064,10 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                                         fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
                                     elif 'lndgrid' in fatesarea_data.dims:
                                         fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                                    elif 'lat' in fatesarea_data.dims and 'lon' in fatesarea_data.dims:
+                                        lat_idx = grid_idx // len(ds.lon)
+                                        lon_idx = grid_idx % len(ds.lon)
+                                        fatesarea_val = fatesarea_data.isel(lat=lat_idx, lon=lon_idx).values
                                     else:
                                         fatesarea_val = 1.0
                                     if fatesarea_val > 0:
@@ -1070,11 +1107,15 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                             if temp_var in ds.variables:
                                 temp_data = ds[temp_var].isel(time=0)
-                                # Determine spatial dimension
+                                # Extract data based on grid type
                                 if 'ncol' in temp_data.dims:
                                     temp_val = temp_data.isel(ncol=grid_idx).values
                                 elif 'lndgrid' in temp_data.dims:
                                     temp_val = temp_data.isel(lndgrid=grid_idx).values
+                                elif 'lat' in temp_data.dims and 'lon' in temp_data.dims:
+                                    lat_idx = grid_idx // len(ds.lon)
+                                    lon_idx = grid_idx % len(ds.lon)
+                                    temp_val = temp_data.isel(lat=lat_idx, lon=lon_idx).values
                                 else:
                                     temp_val = 273.1  # Default 0°C in Kelvin
                                 
@@ -1155,6 +1196,10 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                                 btran_val = btran_data.isel(ncol=grid_idx).values
                             elif 'lndgrid' in btran_data.dims:
                                 btran_val = btran_data.isel(lndgrid=grid_idx).values
+                            elif 'lat' in btran_data.dims and 'lon' in btran_data.dims:
+                                lat_idx = grid_idx // len(current_ds.lon)
+                                lon_idx = grid_idx % len(current_ds.lon)
+                                btran_val = btran_data.isel(lat=lat_idx, lon=lon_idx).values
                             else:
                                 btran_val = 0.5
                             
@@ -1165,6 +1210,10 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                                     fatesarea_val = fatesarea_data.isel(ncol=grid_idx).values
                                 elif 'lndgrid' in fatesarea_data.dims:
                                     fatesarea_val = fatesarea_data.isel(lndgrid=grid_idx).values
+                                elif 'lat' in fatesarea_data.dims and 'lon' in fatesarea_data.dims:
+                                    lat_idx = grid_idx // len(current_ds.lon)
+                                    lon_idx = grid_idx % len(current_ds.lon)
+                                    fatesarea_val = fatesarea_data.isel(lat=lat_idx, lon=lon_idx).values
                                 else:
                                     fatesarea_val = 1.0
                                 if fatesarea_val > 0:
@@ -1196,6 +1245,10 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                                 temp_val = temp_data.isel(ncol=grid_idx).values
                             elif 'lndgrid' in temp_data.dims:
                                 temp_val = temp_data.isel(lndgrid=grid_idx).values
+                            elif 'lat' in temp_data.dims and 'lon' in temp_data.dims:
+                                lat_idx = grid_idx // len(current_ds.lon)
+                                lon_idx = grid_idx % len(current_ds.lon)
+                                temp_val = temp_data.isel(lat=lat_idx, lon=lon_idx).values
                             else:
                                 temp_val = 273.1
                             
@@ -1239,17 +1292,18 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         # Get data for this location and timestep
                         var_data = current_ds[VAR_NAME].isel(time=time_idx)
                         
-                        # Determine spatial dimension
-                        spatial_dim = None
+                        # Extract data for this location based on grid type
                         if 'ncol' in var_data.dims:
-                            spatial_dim = 'ncol'
+                            data = var_data.isel(ncol=grid_idx).values
                         elif 'lndgrid' in var_data.dims:
-                            spatial_dim = 'lndgrid'
-                        
-                        if spatial_dim:
-                            data = var_data.isel({spatial_dim: grid_idx}).values
+                            data = var_data.isel(lndgrid=grid_idx).values
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            # Structured grid - convert flattened index to 2D indices
+                            lat_idx = grid_idx // len(current_ds.lon)
+                            lon_idx = grid_idx % len(current_ds.lon)
+                            data = var_data.isel(lat=lat_idx, lon=lon_idx).values
                         else:
-                            data = var_data.values
+                            data = var_data.values.flatten()[grid_idx] if var_data.values.size > 1 else var_data.values
                         
                         data = data * scaling_factors[VAR_NAME]
                         
@@ -1404,13 +1458,15 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                                 print(f"WARNING: Expected {n_sizes * n_pfts} but got {multiplex_size}")
                             break
                     
-                    # Get size bin labels
-                    size_labels = [f"Size {i+1}" for i in range(n_sizes)]
-                    for size_bounds_var in [f"{size_dim}_bounds", f"fates_{size_dim}_bounds"]:
-                        if size_bounds_var in ds.variables:
-                            size_bounds = ds[size_bounds_var].values
-                            size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
-                            break
+                    # Get size bin labels (same logic as case 5)
+                    if f"{size_dim}_bounds" in ds.variables or f"fates_{size_dim}_bounds" in ds.variables:
+                        size_bounds_var = f"{size_dim}_bounds" if f"{size_dim}_bounds" in ds.variables else f"fates_{size_dim}_bounds"
+                        size_bounds = ds[size_bounds_var].values
+                        size_labels = [f"{size_bounds[i,0]:.1f}-{size_bounds[i,1]:.1f}" for i in range(n_sizes)]
+                    else:
+                        # Use the dimension values directly (e.g., diameter in cm)
+                        size_values = ds[size_dim].values
+                        size_labels = [f"{val:.0f}" for val in size_values]
                     
                     # Get PFT labels
                     pft_labels = [f"PFT {i+1}" for i in range(n_pfts)]
@@ -1457,8 +1513,19 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 # Test both orderings with first location to determine which is correct
                 with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                     var_data = ds[VAR_NAME].isel(time=0)
-                    spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                    test_data = var_data.isel({spatial_dim: location_indices[0][0]}).values * SCALING_FACTORS[VAR_NAME]
+                    grid_idx = location_indices[0][0]
+                    
+                    # Extract data based on grid type
+                    if 'ncol' in var_data.dims:
+                        test_data = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                    elif 'lndgrid' in var_data.dims:
+                        test_data = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                    elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                        lat_idx = grid_idx // len(ds.lon)
+                        lon_idx = grid_idx % len(ds.lon)
+                        test_data = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                    else:
+                        test_data = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
                     
                     # Data is PFT-major ordered: [p0s0, p0s1, ..., p0sN, p1s0, p1s1, ...]
                     multiplex_order = 'pft_major'
@@ -1471,8 +1538,18 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     # Get first frame data for this location
                     with xr.open_dataset(file_time_map[0][0], decode_times=False) as ds:
                         var_data = ds[VAR_NAME].isel(time=0)
-                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                        data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                        
+                        # Extract data based on grid type
+                        if 'ncol' in var_data.dims:
+                            data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lndgrid' in var_data.dims:
+                            data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            lat_idx = grid_idx // len(ds.lon)
+                            lon_idx = grid_idx % len(ds.lon)
+                            data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                        else:
+                            data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
                         
                         # Demultiplex into size x PFT array
                         data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
@@ -1511,10 +1588,20 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                 for file_path, time_idx, _ in file_time_map[-min(10, len(file_time_map)):]:
                     with xr.open_dataset(file_path, decode_times=False) as ds:
                         var_data = ds[VAR_NAME].isel(time=time_idx)
-                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
                         
                         for grid_idx, _, _, _ in location_indices:
-                            data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                            # Extract data based on grid type
+                            if 'ncol' in var_data.dims:
+                                data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                            elif 'lndgrid' in var_data.dims:
+                                data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                            elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                                lat_idx = grid_idx // len(ds.lon)
+                                lon_idx = grid_idx % len(ds.lon)
+                                data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                            else:
+                                data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
+                            
                             data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
                             total_per_size = data_2d.sum(axis=1)
                             max_value = max(max_value, np.nanmax(total_per_size))
@@ -1548,8 +1635,19 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                         
                         # Get data for this location and timestep
                         var_data = current_ds[VAR_NAME].isel(time=time_idx)
-                        spatial_dim = 'ncol' if 'ncol' in var_data.dims else 'lndgrid'
-                        data_1d = var_data.isel({spatial_dim: grid_idx}).values * SCALING_FACTORS[VAR_NAME]
+                        
+                        # Extract data based on grid type
+                        if 'ncol' in var_data.dims:
+                            data_1d = var_data.isel(ncol=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lndgrid' in var_data.dims:
+                            data_1d = var_data.isel(lndgrid=grid_idx).values * SCALING_FACTORS[VAR_NAME]
+                        elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                            lat_idx = grid_idx // len(current_ds.lon)
+                            lon_idx = grid_idx % len(current_ds.lon)
+                            data_1d = var_data.isel(lat=lat_idx, lon=lon_idx).values * SCALING_FACTORS[VAR_NAME]
+                        else:
+                            data_1d = var_data.values.flatten()[grid_idx] * SCALING_FACTORS[VAR_NAME]
+                        
                         data_2d = demultiplex_data(data_1d, n_sizes, n_pfts, multiplex_order)
                         
                         # Update bar heights for each PFT
@@ -1666,16 +1764,19 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     dim_type = "PFT classes" if is_pft_dim else "size classes"
                     print(f"\nFound {n_sizes} {dim_type} in dimension '{size_dim}'")
                     
-                    # Determine spatial dimension
+                    # Determine spatial dimension type (unstructured or structured grid)
                     if 'ncol' in var_data.dims:
                         spatial_dim = 'ncol'
+                        print(f"Using spatial dimension: {spatial_dim}")
                     elif 'lndgrid' in var_data.dims:
                         spatial_dim = 'lndgrid'
+                        print(f"Using spatial dimension: {spatial_dim}")
+                    elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                        spatial_dim = None  # Structured grid doesn't use a single spatial dim
+                        print(f"Using structured grid with lat/lon dimensions")
                     else:
                         print(f"ERROR: No spatial dimension found")
                         exit(1)
-                    
-                    print(f"Using spatial dimension: {spatial_dim}")
                 
                 # Create labels based on dimension type
                 if is_pft_dim:
@@ -1891,16 +1992,19 @@ for case in [6]:  # Specify which cases to run, e.g., [0, 1, 2], [5] for point d
                     dim_type = "PFT classes" if is_pft_dim else "size classes"
                     print(f"\nFound {n_sizes} {dim_type} in dimension '{size_dim}'")
                     
-                    # Determine spatial dimension
+                    # Determine spatial dimension type (unstructured or structured grid)
                     if 'ncol' in var_data.dims:
                         spatial_dim = 'ncol'
+                        print(f"Using spatial dimension: {spatial_dim}")
                     elif 'lndgrid' in var_data.dims:
                         spatial_dim = 'lndgrid'
+                        print(f"Using spatial dimension: {spatial_dim}")
+                    elif 'lat' in var_data.dims and 'lon' in var_data.dims:
+                        spatial_dim = None  # Structured grid doesn't use a single spatial dim
+                        print(f"Using structured grid with lat/lon dimensions")
                     else:
                         print(f"ERROR: No spatial dimension found")
                         exit(1)
-                    
-                    print(f"Using spatial dimension: {spatial_dim}")
                 
                 # Create labels based on dimension type
                 if is_pft_dim:
