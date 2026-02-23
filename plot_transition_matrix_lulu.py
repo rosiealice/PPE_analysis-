@@ -36,8 +36,8 @@ if(jessie_run==1):
     CASENAME="noresm-fates_f45_2000s_ent_agbonly.2026-02-03"
     CASENAME='noresm-fates_ne16_transient_1900_borealseeds.2025-11-19'
     DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/run/")
-    YEAR_RANGE = (1, 2)
-    FILE_INTERVAL = 1
+    YEAR_RANGE = (1, 120 )
+    FILE_INTERVAL = 12
 else:
     CASENAME = "i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta10.CRUJRA.06f_14hp_noLUC.2026-02-09"
     DATA_DIR = Path(f"//datalake/NS9560K/rosief/{CASENAME}/lnd/hist")
@@ -51,7 +51,7 @@ OUTPUT_PATH = f"/datalake/NS9560K/www/diagnostics/noresm/rosief/{CASENAME}/gifs"
 
 VAR_NAME = "FATES_TRANSITION_MATRIX_LULU"
 SHARED_CMAP = 'RdBu'
-SHARED_CLIM_PERCENTILE = 98.0
+SHARED_CLIM_PERCENTILE = 90.0
 
 # Shared layout (keeps static PNG and GIF colorbars aligned)
 SUBPLOT_LEFT = 0.12
@@ -134,13 +134,14 @@ print("Calculating color scale (vmin/vmax) across all timesteps...")
 vmin, vmax = np.inf, -np.inf
 # Find vmin/vmax for patch area
 patcharea_vmin, patcharea_vmax = np.inf, -np.inf
-# Sum LUxLU transitions over period (per pair, per grid point)
+# Sum LUxLU transitions, year {YEAR_RANGE[0]} to {YEAR_RANGE[1]} (per pair, per grid point)
 transition_sum_pairs = None
 transition_abs_values = []
 for idx, (file_path, time_idx, _) in enumerate(file_time_map):
     print(f"  Checking file {idx+1}/{len(file_time_map)}: {file_path}")
     with xr.open_dataset(file_path, decode_times=False) as ds:
         data = ds[VAR_NAME].isel(time=time_idx).values 
+        data = data *100
         if data.shape[-1] == 25:
             data = data.reshape(*data.shape[:-1], 5, 5)
         vmin = min(vmin, np.nanmin(data))
@@ -211,9 +212,9 @@ shared_absmax = max(trans_absmax, cum_absmax, vegc_absmax_global)
 if shared_absmax == 0:
     shared_absmax = 1e-12
 print(f"Cumulative LUxLU color scale: vmin={cum_vmin}, vmax={cum_vmax}")
-print(f"Transition color limit (±): {trans_absmax} (p{SHARED_CLIM_PERCENTILE})")
-print(f"Cumulative color limit (±): {cum_absmax} (p{SHARED_CLIM_PERCENTILE})")
-print(f"VEGC color limit (±): {vegc_absmax_global} (p{SHARED_CLIM_PERCENTILE})")
+print(f"trans_absmax color limit (±): {trans_absmax} (p{SHARED_CLIM_PERCENTILE})")
+print(f"cum_absmax color limit (±): {cum_absmax} (p{SHARED_CLIM_PERCENTILE})")
+print(f"End-Beg color limit (±): {vegc_absmax_global} (p{SHARED_CLIM_PERCENTILE})")
 print(f"Shared color limit (±): {shared_absmax}")
 
 # --- Plot last timestep as static LUxLU transitions map ---
@@ -223,6 +224,7 @@ sum_data = None
 for idx, (file_path, time_idx, _) in enumerate(file_time_map):
     with xr.open_dataset(file_path, decode_times=False) as ds:
         data = ds[VAR_NAME].isel(time=time_idx).values 
+        data = np.multiply(data, FILE_INTERVAL *12)  # Convert from frac/year to %/month
         if data.shape[-1] == 25:
             data = data.reshape(*data.shape[:-1], 5, 5)
         if data.ndim == 3:
@@ -339,7 +341,7 @@ for j in range(n_lu):
                 d = np.full(len(lon_), np.nan)
             sc = ax.scatter(lon_, lat_, c=d, cmap=SHARED_CMAP, s=8, vmin=-shared_absmax, vmax=shared_absmax)
             diagonal_mappables.append(sc)
-            ax.set_title(f'Δ VEGC {LU_ABBR[i]}')
+            ax.set_title(f'Δ AREA {LU_ABBR[i]}')
         else:
             # Off-diagonal: cumulative transition matrix over full period
             k = i * n_lu + j
@@ -353,7 +355,7 @@ for j in range(n_lu):
         ax.set_ylabel("")
         ax.set_xticks([])
         ax.set_yticks([])
-fig_last.suptitle(f"LUxLU transitions - Cumulative over period", fontsize=24, y=0.96)
+fig_last.suptitle(f"LUxLU transitions - Cumulative year {YEAR_RANGE[0]} to {YEAR_RANGE[1]}", fontsize=24, y=0.96)
 output_png = f"{OUTPUT_PATH}/plot_transition_matrix_lulu_last.png"
 print(f"Saving static LUxLU plot to {output_png} ...")
 # Add global colorbar for static plot (off-diagonal)
@@ -429,7 +431,7 @@ def update(frame):
                         d = np.full(len(lon_), np.nan)
                 if d.shape[0] != len(lon_):
                     d = np.full(len(lon_), np.nan)
-                sc = ax.scatter(lon_, lat_, c=d, cmap='plasma', s=8, vmin=patcharea_vmin, vmax=patcharea_vmax)
+                sc = ax.scatter(lon_, lat_, c=d, cmap='cividis', s=8, vmin=patcharea_vmin, vmax=patcharea_vmax)
                 diagonal_mappables.append(sc)
                 ax.set_title("")  # No label for diagonal
             else:
@@ -446,7 +448,7 @@ def update(frame):
                     d = np.full(len(lon_), np.nan)
                 if d.shape[0] != len(lon_):
                     d = np.full(len(lon_), np.nan)
-                sc = ax.scatter(lon_, lat_, c=d, cmap=SHARED_CMAP, s=8, vmin=-shared_absmax, vmax=shared_absmax)
+                sc = ax.scatter(lon_, lat_, c=d, cmap=SHARED_CMAP, s=8, vmin=-trans_absmax, vmax=trans_absmax)
                 mappable = sc
                 ax.set_title(f'{LU_ABBR[j]} → {LU_ABBR[i]}')
             ax.set_xlabel("")
