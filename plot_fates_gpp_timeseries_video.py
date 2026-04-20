@@ -15,6 +15,7 @@ import cartopy.feature as cfeature
 import glob
 import shutil
 import sys
+import re
 
 # Configuration
 DATA_PATH = "/datalake/NS9560K/rosief/"
@@ -26,9 +27,23 @@ CASENAME="i2000.ne16pg3_tn14.fatesSP.noresm3_0_beta09.CPLHIST.2026-01-08"
 CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT_bias28j.2026-01-28"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP_MS3.25_BT1EBT_bias30j_LU2000.2026-01-30"
 #CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CRUJRA_BT3_LSP_MS3.25_BT1EBT_bias28j_LU2000.2026-01-30"
+CASENAME="i2000.f45_f45_mg37.fatesnocomp.noresm3_0_beta10.CRUJRA.30j.2026-02-06"
+#CASENAME="i1850.ne16pg3_tn14.fatesnocomp.noresm3_0_beta08.CPLHIST.2025-12-18"
+#CASENAME="i2000.ne16pg3_tn14.fatesnocomp.noresm3_0_beta09.CPLHIST.BT3_LSP_MS3.25_BT1EBT_bias30j_LU2000.2026-01-30"
 
 
 DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/lnd/hist/")
+
+jessie_run=1
+if(jessie_run==1):
+    DATA_PATH= "/datalake/NS9188K/share/jessien/feb26/"
+    CASENAME="noresm-fates_f45_2000s_ent_agbonly.2026-02-03"
+    CASENAME="noresm-fates_ne16_transient_1900_borealseeds.2025-11-19"
+    CASENAME="noresm-fates_f45_2000s_feb20c.2026-02-20"
+    CASENAME="ne16_transient_1900.2026-02-06"
+
+    DATA_DIR = Path(f"{DATA_PATH}/{CASENAME}/run/")
+
 
 SAME_COLOR_SCALE = True  # Set to True to use same color scale for all variables
 cmap_choose = 'YlGn'
@@ -37,20 +52,31 @@ vminv = 1; vmaxv=99
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
 
 # Loop over multiple cases
-for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
+for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
     print(f"\n{'='*80}")
     print(f"PROCESSING CASE {case}")
     print(f"{'='*80}\n")
     
     if(case==0):
 # Variable names - can be a single string or a list of string s
-        CASE_NAME = "hydraulic_mortality"
-        VAR_NAMES = ["FATES_MORTALITY_HYDRAULIC_CFLUX_PF"]  # or 
+        CASE_NAME = "understorey_mortality"
+        VAR_NAMES = ["MORTALITY_CROWNAREA_UNDERSTORY"]  # or 
+        CASE_NAME = "canopy_mortality"
+        VAR_NAMES = ["MORTALITY_CROWNAREA_CANOPY"]  # or
+        CASE_NAME = "MORTALITY_CFLUX_PF"
+        VAR_NAMES = ["FATES_MORTALITY_CFLUX_PF"]  # or 
+        CASE_NAME = "MORTALITY_PF"
+        VAR_NAMES = ["FATES_MORTALITY_PF"]  # or  
+        CASE_NAME = "MORTALITY_CFLUX_PF"
+        VAR_NAMES = ["FATES_MORTALITY_CFLUX_PF"]  # or
+
+        #CASE_NAME = "btran"
+        #VAR_NAMES = ["BTRAN"]  # 
         SCALING_FACTORS = {var:1 for var in VAR_NAMES}
-        YEAR_RANGE = (25, 30) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 1 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
+        YEAR_RANGE = (2000, 2020) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 2 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
         tint=3
-        UNIT_LABELS = {var: "m2/m2" for var in VAR_NAMES}
+        UNIT_LABELS = {}  # Use units from NetCDF variable attrs by default
 
     if(case==1):
         CASE_NAME = "Cfluxes"
@@ -64,7 +90,7 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
         YEAR_RANGE = (25, 30) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 1 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
         tint=3
-        UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
+        UNIT_LABELS = {var: "units not specified" for var in VAR_NAMES}
 
     if(case==2):
         CASE_NAME = "mortality_sources"
@@ -77,11 +103,11 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
         # Scaling factors for each variable (applied to convert units)
         # Default: 3600*24*365 converts from per-second to per-year
         SCALING_FACTORS = {var: 3600*24*365 for var in VAR_NAMES}
-        YEAR_RANGE = (25, 30) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        YEAR_RANGE = (2000, 2020) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 1 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
         tint=5
-        OUTPUT_FORMAT = "mp4"  # "gif" or "mp4"
-        UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
+        OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
+        UNIT_LABELS = {var: "units not specified" for var in VAR_NAMES}
 
     if(case==3):
         CASE_NAME = "fire_variables"
@@ -96,7 +122,6 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
         FILE_INTERVAL = 1 # Process every Nth timestep 
         tint=3  # tie interval
         OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
-        UNIT_LABELS = {var: "KgC/m2/yr" for var in VAR_NAMES}
         SAME_COLOR_SCALE = False  # Set to True to use same color scale for all variables
         vmaxv=97
 
@@ -123,7 +148,14 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
 
 
     OUTPUT_PATH = "/datalake/NS9560K/www/diagnostics/noresm/rosief/"+CASENAME+"/gifs"
-    file_ext = "gif" if OUTPUT_FORMAT == "gif" else "mp4"
+    requested_output_format = OUTPUT_FORMAT.lower()
+    if requested_output_format == "mp4" and shutil.which('ffmpeg') is None:
+        effective_output_format = "gif"
+        print("ffmpeg not found; using GIF output.")
+    else:
+        effective_output_format = requested_output_format
+
+    file_ext = "gif" if effective_output_format == "gif" else "mp4"
     year_range_str = f"_y{YEAR_RANGE[0]}-{YEAR_RANGE[1]}" if YEAR_RANGE is not None else ""
     OUTPUT_FILE = OUTPUT_PATH+ "/fates_" + CASE_NAME + year_range_str + "_timeseries." + file_ext
     # Unit labels for each variable (applied when scaling is used)
@@ -148,49 +180,58 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
             exit(1)
     
         print(f"Found {len(all_files)} files total")
-    
+
         # Build a list of (file, time_index, time_value) tuples for each timestep
-        # Only scan files within the specified year range
+        # Filter by calendar year parsed from filename to avoid assumptions about run start year.
         file_time_map = []
-    
-        # Determine timestep range based on year range
-        # YEAR_RANGE determines temporal coverage, FILE_INTERVAL determines sampling rate
-        start_timestep = None
-        end_timestep = None
-        if YEAR_RANGE is not None:
-            start_timestep = YEAR_RANGE[0] * 12
-            end_timestep = YEAR_RANGE[1] * 12
-            n_raw_timesteps = end_timestep - start_timestep
-            expected_output = n_raw_timesteps // FILE_INTERVAL
-            print(f"Will process timesteps {start_timestep} to {end_timestep} (years {YEAR_RANGE[0]}-{YEAR_RANGE[1]}), using every {FILE_INTERVAL} timestep → ~{expected_output} output frames")
-    
+
         print("Building timestep list from filenames...")
-    
-        # Build list directly from filenames - each file is one timestep
-        timestep_counter = 0
-        for i, file_path in enumerate(all_files):
-            # Skip timesteps before the start of the range
-            if start_timestep is not None and timestep_counter < start_timestep:
-                timestep_counter += 1
+
+        def _extract_year_from_name(file_path):
+            file_name = Path(file_path).name
+            # Match years after h0a/rh0a, e.g. *.h0a.1901-01.nc or *.rh0a.1994-01-01-00000.nc
+            m = re.search(r"\.(?:r?h0a)\.(\d{4})-\d{2}", file_name)
+            if m:
+                return int(m.group(1))
+            return None
+
+        # First apply YEAR_RANGE filter (inclusive) on files.
+        candidate_files = []
+        for file_path in all_files:
+            file_year = _extract_year_from_name(file_path)
+            if YEAR_RANGE is not None and file_year is not None:
+                if not (YEAR_RANGE[0] <= file_year <= YEAR_RANGE[1]):
+                    continue
+            candidate_files.append(file_path)
+
+        if YEAR_RANGE is not None:
+            expected_output = len(candidate_files) // FILE_INTERVAL if FILE_INTERVAL > 0 else 0
+            print(
+                f"Found {len(candidate_files)} files in years {YEAR_RANGE[0]}-{YEAR_RANGE[1]}, "
+                f"using every {FILE_INTERVAL} timestep -> ~{expected_output} output frames"
+            )
+
+        # Then sample every Nth timestep from the filtered files.
+        for timestep_counter, file_path in enumerate(candidate_files):
+            if (timestep_counter+1) % FILE_INTERVAL != 0:
                 continue
-        
-            # Stop if we've reached the end of the range
-            if end_timestep is not None and timestep_counter >= end_timestep:
-                break
-        
-            # Only add timestep if it matches the interval
-            if (timestep_counter - (start_timestep or 0)) % FILE_INTERVAL == 0:
-                # Open file only to get the time value
-                with xr.open_dataset(file_path, decode_times=False) as ds:
-                    file_time_map.append((file_path, 0, ds.time.values[0]))
-        
-            timestep_counter += 1
-        
-            if (timestep_counter % 50 == 0 or timestep_counter == 1):
-                print(f"\rProcessed {timestep_counter} timesteps, selected {len(file_time_map)}...", end='', flush=True)
-    
-        print(f"\n\nProcessed {timestep_counter} timesteps, selected {len(file_time_map)} for animation")
-    
+
+            # Open file only to get the time value
+            with xr.open_dataset(file_path, decode_times=False) as ds:
+                file_time_map.append((file_path, 0, ds.time.values[0]))
+
+            processed = timestep_counter + 1
+            if processed % 50 == 0 or processed == 1:
+                print(f"\rProcessed {processed} timesteps, selected {len(file_time_map)}...", end='', flush=True)
+
+        print(f"\n\nProcessed {len(candidate_files)} timesteps, selected {len(file_time_map)} for animation")
+
+        if not file_time_map:
+            print("\nERROR: No timesteps selected after YEAR_RANGE/FILE_INTERVAL filtering.")
+            print(f"YEAR_RANGE={YEAR_RANGE}, FILE_INTERVAL={FILE_INTERVAL}")
+            print("Try expanding YEAR_RANGE or lowering FILE_INTERVAL.")
+            exit(1)
+
         n_times = len(file_time_map)
         print(f"Processing {n_times} timesteps")
     
@@ -502,12 +543,15 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
                 else:
                     im.set_data(data)
             
-                # Update title with year-month
-                # Convert frame number to actual timestep accounting for FILE_INTERVAL and start offset
-                actual_timestep = (start_timestep or 0) + (frame * FILE_INTERVAL)
-                year = actual_timestep // 12
-                month = actual_timestep % 12 + 1
-                time_str = f'Year {year}, Month {month:02d}'
+                # Update title with year-month parsed from current filename.
+                file_name = Path(current_file).name
+                m = re.search(r"\.(?:r?h0a)\.(\d{4})-(\d{2})", file_name)
+                if m:
+                    year = int(m.group(1))
+                    month = int(m.group(2))
+                    time_str = f'Year {year}, Month {month:02d}'
+                else:
+                    time_str = 'Time unknown'
                 if meta['split_extra_dim']:
                     extra_dim_name = meta['extra_dims'][0]
                     ax.set_title(f'{VAR_NAME} [{extra_dim_name}={member_idx}] - {time_str}', fontsize=16, fontweight='bold')
@@ -534,19 +578,9 @@ for case in [1,2,3,4,5]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
         output_dir.mkdir(parents=True, exist_ok=True)
         print(f"Output directory: {output_dir}")
     
-        if OUTPUT_FORMAT == "mp4":
-            # Check if ffmpeg is available
-            import shutil
-            if shutil.which('ffmpeg') is None:
-                print("WARNING: ffmpeg not found. Falling back to GIF format.")
-                print("To use MP4, install ffmpeg or run: module load FFmpeg")
-                # Change to GIF format
-                OUTPUT_FILE = OUTPUT_FILE.replace('.mp4', '.gif')
-                writer = animation.PillowWriter(fps=2.5)
-                anim.save(OUTPUT_FILE, writer=writer, dpi=100)
-            else:
-                writer = animation.FFMpegWriter(fps=2.5, metadata=dict(artist='FATES Analysis'), bitrate=1800)
-                anim.save(OUTPUT_FILE, writer=writer, dpi=100)
+        if effective_output_format == "mp4":
+            writer = animation.FFMpegWriter(fps=2.5, metadata=dict(artist='FATES Analysis'), bitrate=1800)
+            anim.save(OUTPUT_FILE, writer=writer, dpi=100)
         else:
             writer = animation.PillowWriter(fps=2.5)
             anim.save(OUTPUT_FILE, writer=writer, dpi=100)
