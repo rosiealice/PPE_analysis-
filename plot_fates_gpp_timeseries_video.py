@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.colors as colors
 from pathlib import Path
 from datetime import datetime
 import cartopy.crs as ccrs
@@ -48,14 +49,17 @@ if(jessie_run==1):
 SAME_COLOR_SCALE = True  # Set to True to use same color scale for all variables
 cmap_choose = 'YlGn'
 vminv = 1; vmaxv=99
+LOG_COLOR_SCALE = False
 
 OUTPUT_FORMAT = "gif"  # "gif" or "mp4"
 
 # Loop over multiple cases
-for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
+for case in [1]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
     print(f"\n{'='*80}")
     print(f"PROCESSING CASE {case}")
     print(f"{'='*80}\n")
+
+    LOG_COLOR_SCALE = False
     
     if(case==0):
 # Variable names - can be a single string or a list of string s
@@ -67,30 +71,39 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
         VAR_NAMES = ["FATES_MORTALITY_CFLUX_PF"]  # or 
         CASE_NAME = "MORTALITY_PF"
         VAR_NAMES = ["FATES_MORTALITY_PF"]  # or  
-        CASE_NAME = "MORTALITY_CFLUX_PF"
-        VAR_NAMES = ["FATES_MORTALITY_CFLUX_PF"]  # or
+        #CASE_NAME = "MORTALITY_CFLUX_PF"
+        #VAR_NAMES = ["FATES_MORTALITY_CFLUX_PF"]  # or
+        CASE_NAME = "NBP"
+        VAR_NAMES = ["FCO2"]  # or
+        #CASE_NAME = "LUCHANGE_WOODPROD_C_FLUX"
+        #VAR_NAMES = ["FATES_LUCHANGE_WOODPROD_C_FLUX"]  # or
 
         #CASE_NAME = "btran"
         #VAR_NAMES = ["BTRAN"]  # 
         SCALING_FACTORS = {var:1 for var in VAR_NAMES}
-        YEAR_RANGE = (2000, 2020) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
-        FILE_INTERVAL = 2 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
+        YEAR_RANGE = (1900, 1990) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        FILE_INTERVAL = 12 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
         tint=3
         UNIT_LABELS = {}  # Use units from NetCDF variable attrs by default
+        LOG_COLOR_SCALE = False
 
     if(case==1):
         CASE_NAME = "Cfluxes"
         VAR_NAMES = ["FATES_GPP", 
         "FATES_NPP",
-        "FATES_LITTER_IN" ,
-        "FATES_LITTER_OUT",
+        "FCO2" ,
+        "FATES_LUCHANGE_WOODPROD_C_FLUX",
         "FATES_FIRE_CLOSS",
         "FATES_HET_RESP"]
+        # Convert from kg/m2/s to kg/m2/yr by multiplying by 3600*24*365
         SCALING_FACTORS = {var: 3600*24*365 for var in VAR_NAMES}
-        YEAR_RANGE = (25, 30) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
+        SCALING_FACTORS["FATES_LUCHANGE_WOODPROD_C_FLUX"] = 1
+        print(f"Applied scaling factors: {SCALING_FACTORS}")
+        YEAR_RANGE = (1960, 1962) # Year range to process as (start_year, end_year), e.g., (5, 10) for years 5-10. None for all years.
         FILE_INTERVAL = 1 # Process every Nth timestep (1=all, 2=every other, 3=every third, etc.)
         tint=3
-        UNIT_LABELS = {var: "units not specified" for var in VAR_NAMES}
+        UNIT_LABELS = {}  # Use units from NetCDF variable attrs by default
+        OUTPUT_FORMAT = "mp4"  # "gif" or "mp4"
 
     if(case==2):
         CASE_NAME = "mortality_sources"
@@ -164,6 +177,7 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
     print(f"Reading data from: {DATA_DIR}")
     print(f"Variables to plot: {VAR_NAMES}")
     print(f"Same color scale for all: {SAME_COLOR_SCALE}")
+    print(f"Log color scale: {LOG_COLOR_SCALE}")
     print(f"Output file: {OUTPUT_FILE}")
     if YEAR_RANGE is not None:
         print(f"Processing years {YEAR_RANGE[0]} to {YEAR_RANGE[1]}")
@@ -354,8 +368,15 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
                     all_values.append(last_frame.flatten())
         
             all_values = np.concatenate(all_values)
-            global_vmin = float(np.nanpercentile(all_values, vminv))
-            global_vmax = float(np.nanpercentile(all_values, vmaxv))
+            if LOG_COLOR_SCALE:
+                positive_values = all_values[np.isfinite(all_values) & (all_values > 0)]
+                if positive_values.size == 0:
+                    raise ValueError("Log color scale requires at least one positive value")
+                global_vmin = float(np.nanpercentile(positive_values, vminv))
+                global_vmax = float(np.nanpercentile(positive_values, vmaxv))
+            else:
+                global_vmin = float(np.nanpercentile(all_values, vminv))
+                global_vmax = float(np.nanpercentile(all_values, vmaxv))
             print(f"  Global range: {global_vmin:.4f} to {global_vmax:.4f}")
         
             # Set same limits for all variables/subplots
@@ -378,8 +399,15 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
                     last_frame = last_frame * var_metadata[VAR_NAME]['scaling_factor']
                     # Combine first and last frame for better color scale
                     all_vals = np.concatenate([var_metadata[VAR_NAME]['first_frame'].flatten(), last_frame.flatten()])
-                    vmin = float(np.nanpercentile(all_vals, 0))
-                    vmax = float(np.nanpercentile(all_vals, 100))
+                    if LOG_COLOR_SCALE:
+                        positive_values = all_vals[np.isfinite(all_vals) & (all_vals > 0)]
+                        if positive_values.size == 0:
+                            raise ValueError(f"Log color scale requires positive values for {VAR_NAME}")
+                        vmin = float(np.nanpercentile(positive_values, vminv))
+                        vmax = float(np.nanpercentile(positive_values, vmaxv))
+                    else:
+                        vmin = float(np.nanpercentile(all_vals, 0))
+                        vmax = float(np.nanpercentile(all_vals, 100))
                     var_metadata[VAR_NAME]['vmin'] = vmin
                     var_metadata[VAR_NAME]['vmax'] = vmax
                     print(f"  {VAR_NAME}: {vmin:.4f} to {vmax:.4f}")
@@ -446,6 +474,8 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
                     first_frame = meta['first_frame'][member_idx, :] * meta['scaling_factor']
                 else:
                     first_frame = meta['first_frame'] * meta['scaling_factor']
+                if LOG_COLOR_SCALE:
+                    first_frame = np.where(first_frame > 0, first_frame, np.nan)
             
                 # Setup map features - add coastlines and country borders
                 ax.coastlines(linewidth=0.5)
@@ -454,14 +484,20 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
                     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
             
                 # Initialize plot
+                norm = colors.LogNorm(vmin=vmin, vmax=vmax) if LOG_COLOR_SCALE else None
                 if use_cartopy and 'lat' in meta['dims']:
                     im = ax.pcolormesh(lon, lat, first_frame, 
                                       transform=ccrs.PlateCarree(),
-                                      cmap=cmap_choose, vmin=vmin, vmax=vmax)
+                                      cmap=cmap_choose, vmin=None if LOG_COLOR_SCALE else vmin,
+                                      vmax=None if LOG_COLOR_SCALE else vmax,
+                                      norm=norm)
                 else:
                     # Unstructured grid - use scatter plot with map background
                     im = ax.scatter(lon, lat, c=first_frame,
-                                   cmap=cmap_choose, vmin=vmin, vmax=vmax, s=7,
+                                   cmap=cmap_choose,
+                                   vmin=None if LOG_COLOR_SCALE else vmin,
+                                   vmax=None if LOG_COLOR_SCALE else vmax,
+                                   norm=norm, s=7,
                                    transform=ccrs.PlateCarree())
             
                 ims.append(im)
@@ -534,6 +570,8 @@ for case in [0]:  # Specify which cases to run, e.g., [0, 1, 2] or [2]
             
                 # Apply scaling factor
                 data = data * meta['scaling_factor']
+                if LOG_COLOR_SCALE:
+                    data = np.where(data > 0, data, np.nan)
             
                 # Update plot
                 if use_cartopy and 'lat' in meta['dims']:
